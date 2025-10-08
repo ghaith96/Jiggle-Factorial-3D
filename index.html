@@ -36,6 +36,7 @@
       width: 100%;
       height: 100%;
       pointer-events: none;
+      z-index: 100;
     }
 
     #message {
@@ -138,6 +139,8 @@
       z-index: 1001;
       box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
       transition: all 0.2s;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
     }
 
     #mobile-settings-button:active {
@@ -172,13 +175,20 @@
       position: absolute;
       top: 5px;
       left: 5px;
-      background-color: #ff0000;
+      background-color: #d32f2f;
       color: white;
       font-size: 18px;
-      border: none;
+      border: 2px solid white;
       padding: 5px 10px;
       cursor: pointer;
-      opacity: 0.5;
+      opacity: 0.9;
+      font-weight: bold;
+      border-radius: 4px;
+    }
+
+    #close-graph-button:hover {
+      background-color: #b71c1c;
+      opacity: 1;
     }
 
     #perf-monitor {
@@ -292,9 +302,11 @@
       left: 50%;
       top: 50%;
       transform: translate(-50%, -50%);
-      background-color: red;
+      background-color: #FFFFFF;
+      border: 2px solid #000000;
       border-radius: 50%;
       pointer-events: none;
+      box-shadow: 0 0 4px rgba(0, 0, 0, 0.5);
     }
 
     .dg.main {
@@ -407,9 +419,9 @@
       }
 
       #mobile-settings-button {
-        width: 44px;
-        height: 44px;
-        font-size: 20px;
+        width: 50px;
+        height: 50px;
+        font-size: 22px;
       }
     }
   </style>
@@ -1055,7 +1067,12 @@
         // Mobile settings button toggle
         const mobileSettingsButton = document.getElementById('mobile-settings-button');
         if (mobileSettingsButton) {
-          mobileSettingsButton.addEventListener('click', () => {
+          let touchHandled = false;
+
+          const toggleSettings = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+
             if (guiContainer.style.display === 'none') {
               guiContainer.style.display = 'block';
               mobileSettingsButton.style.background = 'rgba(102, 126, 234, 1)';
@@ -1063,7 +1080,29 @@
               guiContainer.style.display = 'none';
               mobileSettingsButton.style.background = 'rgba(102, 126, 234, 0.9)';
             }
-          });
+          };
+
+          // Handle touchstart to prevent event propagation to canvas
+          mobileSettingsButton.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            touchHandled = true;
+          }, { passive: false });
+
+          // Handle touchend for the actual toggle
+          mobileSettingsButton.addEventListener('touchend', (e) => {
+            if (touchHandled) {
+              toggleSettings(e);
+              touchHandled = false;
+            }
+          }, { passive: false });
+
+          // Fallback to click for non-touch devices
+          mobileSettingsButton.addEventListener('click', (e) => {
+            if (!touchHandled) {
+              toggleSettings(e);
+            }
+          }, { passive: false });
         }
       }
 
@@ -1532,7 +1571,7 @@
 
       // Create Target Balls with staggered spawn animation
       for (let i = 0; i < settings.level; i++) {
-        const ball = ballPool.acquire(0x87CEEB); // Sky blue ball
+        const ball = ballPool.acquire(0x4A90E2); // Brighter, more saturated blue - better visibility
 
         // Random non-overlapping position
         setNonOverlappingPosition(ball, positions);
@@ -1544,7 +1583,7 @@
 
       // Create Blue Distractor Balls with staggered spawn animation
       for (let i = 0; i < settings.numBlueDistractors; i++) {
-        const ball = ballPool.acquire(0x87CEEB); // Sky blue ball
+        const ball = ballPool.acquire(0x4A90E2); // Brighter, more saturated blue - better visibility
 
         // Random non-overlapping position
         setNonOverlappingPosition(ball, positions);
@@ -1556,7 +1595,8 @@
 
       // Create Colored Distractor Balls with staggered spawn animation
       for (let i = 0; i < settings.numColoredDistractors; i++) {
-        const color = getRandomColor([0x87CEEB, 0xff0000, 0xffff00]); // Exclude sky blue, red, yellow
+        // Exclude primary blue and highlight yellow (special feedback colors auto-excluded)
+        const color = getRandomColor([0x4A90E2, 0xFFEB3B]);
         const ball = ballPool.acquire(color);
 
         // Random non-overlapping position
@@ -1711,9 +1751,12 @@
       let index = 0;
       function highlightNextBall() {
         if (index > 0) {
-          // Reset previous ball color
+          // Reset previous ball appearance
           const previous = highlightSequence[index - 1];
-          previous.ball.material.color.set(0x87CEEB);
+          previous.ball.material.color.set(0x4A90E2);
+          previous.ball.material.emissive.set(0xFFFFFF);
+          previous.ball.material.emissiveIntensity = 0.1;
+          previous.ball.scale.set(1, 1, 1); // Reset scale
           previous.ball.userData.isCurrentlyHighlighted = false; // Unmark as highlighted
 
           // Remove label
@@ -1722,9 +1765,12 @@
           previous.ball.userData.label = null;
         }
         if (index < highlightSequence.length) {
-          // Highlight current ball
+          // Highlight current ball with enhanced visual effects
           const current = highlightSequence[index];
-          current.ball.material.color.set(0xff0000);
+          current.ball.material.color.set(0xFFFF00); // Bright yellow
+          current.ball.material.emissive.set(0xFF4400); // Orange-red glow
+          current.ball.material.emissiveIntensity = 0.8; // Strong glow
+          current.ball.scale.set(1.2, 1.2, 1.2); // Make it larger
           current.ball.userData.isCurrentlyHighlighted = true; // Mark as highlighted
 
           // Add number label
@@ -1735,9 +1781,12 @@
         } else {
           // End of sequence
           isSequenceShowing = false;
-          // Reset last ball color and remove label
+          // Reset last ball appearance and remove label
           const lastBall = highlightSequence[index - 1].ball;
-          lastBall.material.color.set(0x87CEEB);
+          lastBall.material.color.set(0x4A90E2);
+          lastBall.material.emissive.set(0xFFFFFF);
+          lastBall.material.emissiveIntensity = 0.1;
+          lastBall.scale.set(1, 1, 1); // Reset scale
           lastBall.userData.isCurrentlyHighlighted = false; // Unmark as highlighted
           disposeLabel(lastBall.userData.label);
           lastBall.remove(lastBall.userData.label);
@@ -1866,23 +1915,26 @@
         if (targetBalls.includes(parentBall)) {
           // Check if the selected ball is the correct one in the sequence
           if (parentBall === targetSequence[userSequence.length - 1].ball && !mistakeMade) {
-            // Correct selection - smooth color transition and particle effect
-            animateColorTransition(parentBall, 0xffff00, 300);
-            animateBallSelection(parentBall, true, scene);
-            createLightFlash(parentBall.position, scene, 0xFFD700, 500);
+            // Correct selection - vibrant green with glow
+            parentBall.material.color.set(0x00FF00); // Bright vibrant green
+            parentBall.material.emissive.set(0x00FF00); // Green glow
+            parentBall.material.emissiveIntensity = 0.5; // Strong glow
             vibrateDevice(50); // Short vibration for correct selection
           } else {
-            // Wrong sequence but correct target ball
-            const targetColor = settings.isRegular3DMOT ? 0xffff00 : 0xffa500;
-            animateColorTransition(parentBall, targetColor, 300);
-            animateBallSelection(parentBall, false, scene);
+            // Wrong sequence but correct target ball - vibrant orange with glow
+            const targetColor = settings.isRegular3DMOT ? 0x00FF00 : 0xFF6600; // Vibrant green or orange
+            const emissiveColor = settings.isRegular3DMOT ? 0x00FF00 : 0xFF6600;
+            parentBall.material.color.set(targetColor);
+            parentBall.material.emissive.set(emissiveColor);
+            parentBall.material.emissiveIntensity = 0.5;
             mistakeMade = true;
             vibrateDevice([50, 50, 50]); // Pattern for wrong order
           }
         } else {
-          // Player selected a distractor ball - shake animation
-          animateColorTransition(parentBall, 0xff0000, 300);
-          animateBallSelection(parentBall, false, scene);
+          // Player selected a distractor ball - vibrant red with glow
+          parentBall.material.color.set(0xFF0000); // Bright vibrant red
+          parentBall.material.emissive.set(0xFF0000); // Red glow
+          parentBall.material.emissiveIntensity = 0.5; // Strong glow
           mistakeMade = true;
           vibrateDevice(200); // Long vibration for wrong ball
         }
@@ -2241,7 +2293,10 @@
           target.ball.remove(target.ball.userData.label);
           target.ball.userData.label = null;
         }
-        target.ball.material.color.set(0x00ff00); // Turn green
+        // Vibrant green with glow for correct answers
+        target.ball.material.color.set(0x00FF00); // Bright vibrant green
+        target.ball.material.emissive.set(0x00FF00); // Green glow
+        target.ball.material.emissiveIntensity = 0.5; // Strong glow
         addNumberLabel(target.ball, i + 1); // Add number label
       }
     }
@@ -2472,23 +2527,35 @@
     */
 
     function getRandomColor(excludeColors) {
-      const maxAttempts = 100;
-      let attempts = 0;
-      let color;
+      // Define a palette of accessible, high-contrast colors
+      // Explicitly excluding special feedback colors: 0x00FF00 (green), 0xFF0000 (red), 0xFF6600 (orange)
+      const accessibleColors = [
+        0x9C27B0, // Purple
+        0x00BCD4, // Cyan
+        0xFF5722, // Deep Orange (different from feedback orange)
+        0x8BC34A, // Light Green (different from feedback green)
+        0x3F51B5, // Indigo
+        0x009688, // Teal
+        0xE91E63, // Pink
+        0xCDDC39, // Lime
+        0xFFEB3B, // Yellow
+        0x795548, // Brown
+      ];
 
-      do {
-        color = Math.floor(Math.random() * 0xffffff);
-        attempts++;
+      // Always exclude the special feedback colors
+      const specialFeedbackColors = [0x00FF00, 0xFF0000, 0xFF6600];
+      const allExcludedColors = [...excludeColors, ...specialFeedbackColors];
 
-        // Prevent infinite loop if all colors are excluded
-        if (attempts >= maxAttempts) {
-          console.warn('getRandomColor: Max attempts reached, returning fallback color');
-          // Return a fallback color that's likely not excluded
-          return 0x00ff00; // Green as fallback
-        }
-      } while (excludeColors.includes(color));
+      // Filter out all excluded colors
+      const availableColors = accessibleColors.filter(color => !allExcludedColors.includes(color));
 
-      return color;
+      if (availableColors.length === 0) {
+        console.warn('getRandomColor: No available colors, returning fallback');
+        return 0x9C27B0; // Purple as fallback
+      }
+
+      // Return random color from available palette
+      return availableColors[Math.floor(Math.random() * availableColors.length)];
     }
 
     function getRandomInRange(min, max) {

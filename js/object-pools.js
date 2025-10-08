@@ -15,7 +15,7 @@ export class BallPool {
     this.pool = [];
     this.active = [];
     this.sharedGeometry = new THREE.SphereGeometry(1.5, 32, 32);
-    this.sharedOutlineGeometry = new THREE.SphereGeometry(1.5 + 0.12, 32, 32);
+    this.sharedOutlineGeometry = new THREE.SphereGeometry(1.5 + 0.03, 32, 32); // Much slimmer outline
     this.labelPool = null; // Will be set externally
   }
 
@@ -57,7 +57,7 @@ export class BallPool {
       isRotating: false,
       rotationGroup: 0,
       rotationAxis: '',
-      originalColor: 0x87CEEB,
+      originalColor: 0x42A5F5, // Material Blue 400 - better visibility
       rotationAngle: 0,
       isGameObject: true,
       isCurrentlyHighlighted: false,
@@ -67,12 +67,12 @@ export class BallPool {
       targetScale: 1.0 // For smooth scaling
     };
 
-    // Create outline once with better visuals
+    // Create subtle outline for depth
     const outlineMaterial = new THREE.MeshBasicMaterial({
       color: 0x000000,
       side: THREE.BackSide,
       depthWrite: false,
-      opacity: 0.4,
+      opacity: 0.15, // Much more subtle
       transparent: true,
     });
     const outline = new THREE.Mesh(this.sharedOutlineGeometry, outlineMaterial);
@@ -116,6 +116,11 @@ export class BallPool {
     ball.userData.rotationAngle = 0;
     ball.userData.rotationGroup = 0;
     ball.userData.rotationAxis = '';
+    // Reset visual properties (color, emissive, scale)
+    ball.material.color.set(ball.userData.originalColor);
+    ball.material.emissive.set(0xFFFFFF);
+    ball.material.emissiveIntensity = 0.05;
+    ball.scale.set(1, 1, 1);
     // Remove label if attached
     if (ball.userData.label && this.labelPool) {
       this.labelPool.release(ball.userData.label);
@@ -203,25 +208,75 @@ export class LabelPool {
    * @returns {THREE.Mesh} Label mesh
    */
   createLabel(number) {
+    const numberSize = this.settings ? this.settings.numberSize : 0.5;
+    
     const geometry = new TextGeometry(number.toString(), {
       font: this.loadedFont,
-      size: this.settings ? this.settings.numberSize : 0.5,
-      depth: this.settings ? this.settings.numberSize * 0.1 : 0.05,
+      size: numberSize,
+      depth: numberSize * 0.15,
+      curveSegments: 8,
+      bevelEnabled: true,
+      bevelThickness: 0.03,
+      bevelSize: 0.03,
+      bevelOffset: 0,
+      bevelSegments: 3
     });
 
-    const material = new THREE.MeshBasicMaterial({ color: 0xffffff });
+    // Use MeshBasicMaterial with depthTest disabled to always render on top
+    const material = new THREE.MeshBasicMaterial({ 
+      color: 0xffffff,
+      depthTest: false, // Always render on top of the ball
+      depthWrite: false,
+      transparent: true,
+      opacity: 1.0
+    });
     const textMesh = new THREE.Mesh(geometry, material);
+
+    // Create a black stroke/outline for better contrast
+    const strokeGeometry = new TextGeometry(number.toString(), {
+      font: this.loadedFont,
+      size: numberSize * 1.1,
+      depth: numberSize * 0.12,
+      curveSegments: 8,
+      bevelEnabled: true,
+      bevelThickness: 0.04,
+      bevelSize: 0.04,
+      bevelOffset: 0,
+      bevelSegments: 3
+    });
+    const strokeMaterial = new THREE.MeshBasicMaterial({ 
+      color: 0x000000,
+      depthTest: false, // Always render on top
+      depthWrite: false,
+      transparent: true,
+      opacity: 0.9
+    });
+    const strokeMesh = new THREE.Mesh(strokeGeometry, strokeMaterial);
 
     geometry.computeBoundingBox();
     const centerOffsetX = -0.5 * (geometry.boundingBox.max.x - geometry.boundingBox.min.x);
     const centerOffsetY = -0.5 * (geometry.boundingBox.max.y - geometry.boundingBox.min.y);
-    const numberSize = this.settings ? this.settings.numberSize : 0.5;
-    const offsetZ = 1.6 + numberSize * 0.1;
-    textMesh.position.set(centerOffsetX, centerOffsetY, offsetZ);
-    textMesh.userData.isLabel = true;
-    textMesh.visible = false; // Hidden by default
+    
+    // Position text further from ball surface to avoid z-fighting
+    const offsetZ = 2.0 + numberSize * 0.2;
+    
+    textMesh.position.set(centerOffsetX, centerOffsetY, 0.05); // Slightly in front
+    
+    strokeGeometry.computeBoundingBox();
+    const strokeCenterX = -0.5 * (strokeGeometry.boundingBox.max.x - strokeGeometry.boundingBox.min.x);
+    const strokeCenterY = -0.5 * (strokeGeometry.boundingBox.max.y - strokeGeometry.boundingBox.min.y);
+    strokeMesh.position.set(strokeCenterX, strokeCenterY, 0); // Behind text
 
-    return textMesh;
+    // Create a container group
+    const labelGroup = new THREE.Group();
+    labelGroup.add(strokeMesh);
+    labelGroup.add(textMesh);
+    labelGroup.position.set(0, 0, offsetZ); // Position group away from ball
+    labelGroup.renderOrder = 999; // Render after everything else
+    labelGroup.userData.isLabel = true;
+    labelGroup.visible = false;
+
+    return labelGroup;
   }
 
   /**
