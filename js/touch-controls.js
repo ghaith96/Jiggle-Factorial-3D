@@ -58,6 +58,11 @@ export class TouchControls {
    * @param {TouchEvent} event - Touch event
    */
   onTouchStart(event) {
+    const target = event.target;
+    if (target.id === 'mobile-settings-button' || target.id === 'mobile-start-button') {
+      return;
+    }
+
     this.touchState.touches = Array.from(event.touches);
 
     if (event.touches.length === 1) {

@@ -17,9 +17,20 @@
   <link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png">
   <link rel="apple-touch-icon" href="/icon-192.png">
   <style>
+    html,
     body {
       margin: 0;
+      padding: 0;
       overflow: hidden;
+      width: 100%;
+      height: 100%;
+      position: fixed;
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
     }
 
     #gui-container {
@@ -123,11 +134,11 @@
       border-radius: 8px;
     }
 
-    #mobile-settings-button {
+    #mobile-settings-button,
+    #mobile-start-button {
       display: none;
       position: fixed;
       top: 10px;
-      right: 10px;
       background: rgba(102, 126, 234, 0.9);
       color: white;
       border: none;
@@ -143,9 +154,23 @@
       -webkit-tap-highlight-color: transparent;
     }
 
+    #mobile-settings-button {
+      right: 10px;
+    }
+
+    #mobile-start-button {
+      right: 70px;
+      background: rgba(46, 204, 113, 0.9);
+    }
+
     #mobile-settings-button:active {
       transform: scale(0.95);
       background: rgba(102, 126, 234, 1);
+    }
+
+    #mobile-start-button:active {
+      transform: scale(0.95);
+      background: rgba(46, 204, 113, 1);
     }
 
     #graph-popup {
@@ -347,7 +372,8 @@
         font-weight: bold;
       }
 
-      #mobile-settings-button {
+      #mobile-settings-button,
+      #mobile-start-button {
         display: block;
       }
 
@@ -418,7 +444,8 @@
         padding: 10px;
       }
 
-      #mobile-settings-button {
+      #mobile-settings-button,
+      #mobile-start-button {
         width: 50px;
         height: 50px;
         font-size: 22px;
@@ -430,6 +457,7 @@
 <body>
   <!-- Mobile Settings Button -->
   <button id="mobile-settings-button" title="Settings">⚙️</button>
+  <button id="mobile-start-button" title="Start Game">▶️</button>
   <div id="gui-container"></div>
   <div id="overlay">
     <div id="message"></div>
@@ -576,6 +604,14 @@
     let colorSwapTimeouts = [];
     let colorSwapScheduled = false;
     let activeColorSwaps = [];
+    let gravityShiftTimeouts = [];
+    let gravityShiftScheduled = false;
+    let currentGravityDirection = null;
+    let currentGravityVector = new THREE.Vector3(0, 0, 0);
+    let magnetFrameCounter = 0;
+    let orbitFormationTimeouts = [];
+    let orbitFormationScheduled = false;
+    let activeFormations = [];
 
     // New variables for score tracking
     let totalTrials = 0;
@@ -942,6 +978,48 @@
         everyIncorrectColorSwap: 2,
         colorSwapAffectPercentageChangeByCorrect: 5,
         colorSwapAffectPercentageChangeByIncorrect: -5,
+        gravityShiftMode: false,
+        gravityShiftFrequencyMin: 3000,
+        gravityShiftFrequencyMax: 8000,
+        gravityShiftTransitionDuration: 1000,
+        gravityShiftStrength: 0.05,
+        gravityShiftAffectTargetsOnly: false,
+        gravityShiftDirections: ['up', 'down', 'left', 'right', 'forward', 'backward'],
+        gravityShiftFrequencyChangeByCorrect: -200,
+        everyCorrectGravityShift: 3,
+        gravityShiftFrequencyChangeByIncorrect: 300,
+        everyIncorrectGravityShift: 2,
+        gravityShiftStrengthChangeByCorrect: 0.005,
+        gravityShiftStrengthChangeByIncorrect: -0.005,
+        magnetMode: false,
+        magnetStrength: 0.002,
+        magnetMinDistance: 5,
+        magnetMaxDistance: 25,
+        magnetForceType: 'attract',
+        magnetAffectTargetsOnly: false,
+        magnetTargetToDistractor: true,
+        magnetUpdateFrequency: 1,
+        magnetStrengthChangeByCorrect: 0.0002,
+        everyCorrectMagnet: 3,
+        magnetStrengthChangeByIncorrect: -0.0002,
+        everyIncorrectMagnet: 2,
+        magnetMaxDistanceChangeByCorrect: 2,
+        magnetMaxDistanceChangeByIncorrect: -2,
+        orbitFormationMode: false,
+        orbitFormationFrequencyMin: 5000,
+        orbitFormationFrequencyMax: 12000,
+        orbitFormationDuration: 3000,
+        orbitFormationTransitionDuration: 1000,
+        orbitFormationRotationSpeed: 0.5,
+        orbitFormationRadius: 15,
+        orbitFormationAffectTargetsOnly: false,
+        orbitFormationAffectPercentage: 100,
+        orbitFormationFrequencyChangeByCorrect: -300,
+        everyCorrectOrbitFormation: 3,
+        orbitFormationFrequencyChangeByIncorrect: 400,
+        everyIncorrectOrbitFormation: 2,
+        orbitFormationDurationChangeByCorrect: 200,
+        orbitFormationDurationChangeByIncorrect: -200,
       };
 
       settings = {
@@ -1074,6 +1152,30 @@
       colorSwapAdjustmentFolder.add(settings, 'colorSwapAffectPercentageChangeByCorrect').name('Affect % Change (Correct)');
       colorSwapAdjustmentFolder.add(settings, 'colorSwapAffectPercentageChangeByIncorrect').name('Affect % Change (Incorrect)');
 
+      const gravityShiftAdjustmentFolder = autoProgressionFolder.addFolder('Gravity Shift Adjustment');
+      gravityShiftAdjustmentFolder.add(settings, 'gravityShiftFrequencyChangeByCorrect').name('Frequency Change (Correct)');
+      gravityShiftAdjustmentFolder.add(settings, 'everyCorrectGravityShift').name('Every Correct').min(1).step(1);
+      gravityShiftAdjustmentFolder.add(settings, 'gravityShiftFrequencyChangeByIncorrect').name('Frequency Change (Incorrect)');
+      gravityShiftAdjustmentFolder.add(settings, 'everyIncorrectGravityShift').name('Every Incorrect').min(1).step(1);
+      gravityShiftAdjustmentFolder.add(settings, 'gravityShiftStrengthChangeByCorrect').name('Strength Change (Correct)');
+      gravityShiftAdjustmentFolder.add(settings, 'gravityShiftStrengthChangeByIncorrect').name('Strength Change (Incorrect)');
+
+      const magnetAdjustmentFolder = autoProgressionFolder.addFolder('Magnet Adjustment');
+      magnetAdjustmentFolder.add(settings, 'magnetStrengthChangeByCorrect').name('Strength Change (Correct)');
+      magnetAdjustmentFolder.add(settings, 'everyCorrectMagnet').name('Every Correct').min(1).step(1);
+      magnetAdjustmentFolder.add(settings, 'magnetStrengthChangeByIncorrect').name('Strength Change (Incorrect)');
+      magnetAdjustmentFolder.add(settings, 'everyIncorrectMagnet').name('Every Incorrect').min(1).step(1);
+      magnetAdjustmentFolder.add(settings, 'magnetMaxDistanceChangeByCorrect').name('Max Distance Change (Correct)');
+      magnetAdjustmentFolder.add(settings, 'magnetMaxDistanceChangeByIncorrect').name('Max Distance Change (Incorrect)');
+
+      const orbitFormationAdjustmentFolder = autoProgressionFolder.addFolder('Orbit Formation Adjustment');
+      orbitFormationAdjustmentFolder.add(settings, 'orbitFormationFrequencyChangeByCorrect').name('Frequency Change (Correct)');
+      orbitFormationAdjustmentFolder.add(settings, 'everyCorrectOrbitFormation').name('Every Correct').min(1).step(1);
+      orbitFormationAdjustmentFolder.add(settings, 'orbitFormationFrequencyChangeByIncorrect').name('Frequency Change (Incorrect)');
+      orbitFormationAdjustmentFolder.add(settings, 'everyIncorrectOrbitFormation').name('Every Incorrect').min(1).step(1);
+      orbitFormationAdjustmentFolder.add(settings, 'orbitFormationDurationChangeByCorrect').name('Duration Change (Correct)');
+      orbitFormationAdjustmentFolder.add(settings, 'orbitFormationDurationChangeByIncorrect').name('Duration Change (Incorrect)');
+
       const speedBurstFolder = gui.addFolder('Speed Burst Mode');
       speedBurstFolder.add(settings, 'speedBurstMode').name('Enable Speed Burst');
       speedBurstFolder.add(settings, 'speedBurstFrequencyMin').name('Frequency Min (ms)').min(500).step(100);
@@ -1092,6 +1194,58 @@
       colorSwapFolder.add(settings, 'colorSwapTargetBehavior', ['all', 'targetsOnly', 'distractorsOnly']).name('Target Behavior');
       colorSwapFolder.add(settings, 'colorSwapAffectPercentage').name('Affect Percentage').min(10).max(100).step(5);
       colorSwapFolder.add(settings, 'colorSwapVisualEffect').name('Visual Effect');
+
+      const gravityShiftFolder = gui.addFolder('Gravity Shift Mode');
+      const gravityEnableController = gravityShiftFolder.add(settings, 'gravityShiftMode').name('Enable Gravity Shift');
+      gravityEnableController.__li.setAttribute('title', 'Periodically changes gravity direction, causing balls to fall in different directions');
+      const gravityFreqMinController = gravityShiftFolder.add(settings, 'gravityShiftFrequencyMin').name('Frequency Min (ms)').min(1000).max(10000).step(100);
+      gravityFreqMinController.__li.setAttribute('title', 'Minimum time between gravity direction changes');
+      const gravityFreqMaxController = gravityShiftFolder.add(settings, 'gravityShiftFrequencyMax').name('Frequency Max (ms)').min(1000).max(20000).step(100);
+      gravityFreqMaxController.__li.setAttribute('title', 'Maximum time between gravity direction changes');
+      const gravityTransitionController = gravityShiftFolder.add(settings, 'gravityShiftTransitionDuration').name('Transition Duration (ms)').min(100).max(3000).step(100);
+      gravityTransitionController.__li.setAttribute('title', 'How long gravity transition takes');
+      const gravityStrengthController = gravityShiftFolder.add(settings, 'gravityShiftStrength').name('Gravity Strength').min(0.01).max(0.2).step(0.005);
+      gravityStrengthController.__li.setAttribute('title', 'Force magnitude of gravity effect');
+      const gravityAffectTargetsController = gravityShiftFolder.add(settings, 'gravityShiftAffectTargetsOnly').name('Affect Targets Only');
+      gravityAffectTargetsController.__li.setAttribute('title', 'Only apply gravity to target balls');
+
+      const magnetFolder = gui.addFolder('Magnet Mode');
+      const magnetEnableController = magnetFolder.add(settings, 'magnetMode').name('Enable Magnet Mode');
+      magnetEnableController.__li.setAttribute('title', 'Balls attract or repel each other based on distance');
+      const magnetStrengthController = magnetFolder.add(settings, 'magnetStrength').name('Magnet Strength').min(0.0001).max(0.01).step(0.0001);
+      magnetStrengthController.__li.setAttribute('title', 'Force strength of magnetic interactions');
+      const magnetMinDistController = magnetFolder.add(settings, 'magnetMinDistance').name('Min Distance').min(1).max(20).step(1);
+      magnetMinDistController.__li.setAttribute('title', 'Minimum distance for force application');
+      const magnetMaxDistController = magnetFolder.add(settings, 'magnetMaxDistance').name('Max Distance').min(10).max(50).step(1);
+      magnetMaxDistController.__li.setAttribute('title', 'Maximum distance for force calculation');
+      const magnetForceTypeController = magnetFolder.add(settings, 'magnetForceType', ['attract', 'repel', 'mixed']).name('Force Type');
+      magnetForceTypeController.__li.setAttribute('title', 'Type of magnetic force: attract, repel, or mixed charges');
+      const magnetAffectTargetsController = magnetFolder.add(settings, 'magnetAffectTargetsOnly').name('Affect Targets Only');
+      magnetAffectTargetsController.__li.setAttribute('title', 'Only apply magnetic forces to target balls');
+      const magnetTargetToDistractorController = magnetFolder.add(settings, 'magnetTargetToDistractor').name('Target-Distractor Interaction');
+      magnetTargetToDistractorController.__li.setAttribute('title', 'Allow magnetic forces between targets and distractors');
+      const magnetUpdateFreqController = magnetFolder.add(settings, 'magnetUpdateFrequency').name('Update Frequency').min(1).max(10).step(1);
+      magnetUpdateFreqController.__li.setAttribute('title', 'Update magnetic forces every N frames for optimization');
+
+      const orbitFormationFolder = gui.addFolder('Orbit/Formation Mode');
+      const orbitEnableController = orbitFormationFolder.add(settings, 'orbitFormationMode').name('Enable Orbit Formation');
+      orbitEnableController.__li.setAttribute('title', 'Balls periodically lock into rotating circular formations');
+      const orbitFreqMinController = orbitFormationFolder.add(settings, 'orbitFormationFrequencyMin').name('Frequency Min (ms)').min(1000).max(20000).step(100);
+      orbitFreqMinController.__li.setAttribute('title', 'Minimum time between formation triggers');
+      const orbitFreqMaxController = orbitFormationFolder.add(settings, 'orbitFormationFrequencyMax').name('Frequency Max (ms)').min(1000).max(30000).step(100);
+      orbitFreqMaxController.__li.setAttribute('title', 'Maximum time between formation triggers');
+      const orbitDurationController = orbitFormationFolder.add(settings, 'orbitFormationDuration').name('Formation Duration (ms)').min(1000).max(10000).step(100);
+      orbitDurationController.__li.setAttribute('title', 'How long the formation lasts');
+      const orbitTransitionController = orbitFormationFolder.add(settings, 'orbitFormationTransitionDuration').name('Transition Duration (ms)').min(100).max(3000).step(100);
+      orbitTransitionController.__li.setAttribute('title', 'Time to enter/exit formation');
+      const orbitRotationSpeedController = orbitFormationFolder.add(settings, 'orbitFormationRotationSpeed').name('Rotation Speed').min(0.1).max(2.0).step(0.1);
+      orbitRotationSpeedController.__li.setAttribute('title', 'Rotation speed in radians/sec');
+      const orbitRadiusController = orbitFormationFolder.add(settings, 'orbitFormationRadius').name('Orbit Radius').min(5).max(30).step(1);
+      orbitRadiusController.__li.setAttribute('title', 'Radius of the orbital formation');
+      const orbitAffectTargetsController = orbitFormationFolder.add(settings, 'orbitFormationAffectTargetsOnly').name('Affect Targets Only');
+      orbitAffectTargetsController.__li.setAttribute('title', 'Only targets form orbits');
+      const orbitAffectPercentageController = orbitFormationFolder.add(settings, 'orbitFormationAffectPercentage').name('Affect Percentage').min(10).max(100).step(5);
+      orbitAffectPercentageController.__li.setAttribute('title', 'Percentage of balls that join formation');
 
       const resetFolder = gui.addFolder('Settings Management');
       resetFolder.add(settings, 'exportSettings').name('Export Settings');
@@ -1134,8 +1288,6 @@
         // Mobile settings button toggle
         const mobileSettingsButton = document.getElementById('mobile-settings-button');
         if (mobileSettingsButton) {
-          let touchHandled = false;
-
           const toggleSettings = (e) => {
             e.preventDefault();
             e.stopPropagation();
@@ -1149,26 +1301,22 @@
             }
           };
 
-          // Handle touchstart to prevent event propagation to canvas
-          mobileSettingsButton.addEventListener('touchstart', (e) => {
+          mobileSettingsButton.addEventListener('click', (e) => {
+            toggleSettings(e);
+          }, { passive: false });
+        }
+
+        const mobileStartButton = document.getElementById('mobile-start-button');
+        if (mobileStartButton) {
+          const handleStart = (e) => {
             e.preventDefault();
             e.stopPropagation();
-            touchHandled = true;
-          }, { passive: false });
 
-          // Handle touchend for the actual toggle
-          mobileSettingsButton.addEventListener('touchend', (e) => {
-            if (touchHandled) {
-              toggleSettings(e);
-              touchHandled = false;
-            }
-          }, { passive: false });
+            startGame();
+          };
 
-          // Fallback to click for non-touch devices
-          mobileSettingsButton.addEventListener('click', (e) => {
-            if (!touchHandled) {
-              toggleSettings(e);
-            }
+          mobileStartButton.addEventListener('click', (e) => {
+            handleStart(e);
           }, { passive: false });
         }
       }
@@ -1370,6 +1518,9 @@
     function clearGameObjects() {
       clearSpeedBurstTimeouts();
       clearColorSwapTimeouts();
+      clearGravityShiftTimeouts();
+      clearMagnetMode();
+      clearOrbitFormationTimeouts();
 
       // Release all balls back to pool
       ballPool.releaseAll();
@@ -1769,6 +1920,9 @@
 
       startSpeedBurstMode();
       startColorSwapMode();
+      startGravityShiftMode();
+      startMagnetMode();
+      startOrbitFormationMode();
     }
 
     function assignRandomMovement(ballArray) {
@@ -2354,6 +2508,34 @@
           settings.colorSwapAffectPercentage += settings.colorSwapAffectPercentageChangeByCorrect;
           settings.colorSwapAffectPercentage = Math.min(100, Math.max(10, settings.colorSwapAffectPercentage));
         }
+
+        if (settings.gravityShiftMode && correctAnswersCount % settings.everyCorrectGravityShift === 0) {
+          settings.gravityShiftFrequencyMin += settings.gravityShiftFrequencyChangeByCorrect;
+          settings.gravityShiftFrequencyMax += settings.gravityShiftFrequencyChangeByCorrect;
+          settings.gravityShiftFrequencyMin = Math.max(1000, settings.gravityShiftFrequencyMin);
+          settings.gravityShiftFrequencyMax = Math.max(1000, settings.gravityShiftFrequencyMax);
+
+          settings.gravityShiftStrength += settings.gravityShiftStrengthChangeByCorrect;
+          settings.gravityShiftStrength = Math.min(0.2, Math.max(0.01, settings.gravityShiftStrength));
+        }
+
+        if (settings.magnetMode && correctAnswersCount % settings.everyCorrectMagnet === 0) {
+          settings.magnetStrength += settings.magnetStrengthChangeByCorrect;
+          settings.magnetStrength = Math.min(0.01, Math.max(0.0001, settings.magnetStrength));
+
+          settings.magnetMaxDistance += settings.magnetMaxDistanceChangeByCorrect;
+          settings.magnetMaxDistance = Math.min(50, Math.max(10, settings.magnetMaxDistance));
+        }
+
+        if (settings.orbitFormationMode && correctAnswersCount % settings.everyCorrectOrbitFormation === 0) {
+          settings.orbitFormationFrequencyMin += settings.orbitFormationFrequencyChangeByCorrect;
+          settings.orbitFormationFrequencyMax += settings.orbitFormationFrequencyChangeByCorrect;
+          settings.orbitFormationFrequencyMin = Math.max(1000, settings.orbitFormationFrequencyMin);
+          settings.orbitFormationFrequencyMax = Math.max(1000, settings.orbitFormationFrequencyMax);
+
+          settings.orbitFormationDuration += settings.orbitFormationDurationChangeByCorrect;
+          settings.orbitFormationDuration = Math.min(10000, Math.max(1000, settings.orbitFormationDuration));
+        }
       } else {
         // Incorrect Answer Adjustments
         if (incorrectAnswersCount % settings.everyIncorrectLevel === 0) {
@@ -2391,6 +2573,34 @@
 
           settings.colorSwapAffectPercentage += settings.colorSwapAffectPercentageChangeByIncorrect;
           settings.colorSwapAffectPercentage = Math.min(100, Math.max(10, settings.colorSwapAffectPercentage));
+        }
+
+        if (settings.gravityShiftMode && incorrectAnswersCount % settings.everyIncorrectGravityShift === 0) {
+          settings.gravityShiftFrequencyMin += settings.gravityShiftFrequencyChangeByIncorrect;
+          settings.gravityShiftFrequencyMax += settings.gravityShiftFrequencyChangeByIncorrect;
+          settings.gravityShiftFrequencyMin = Math.max(1000, settings.gravityShiftFrequencyMin);
+          settings.gravityShiftFrequencyMax = Math.max(1000, settings.gravityShiftFrequencyMax);
+
+          settings.gravityShiftStrength += settings.gravityShiftStrengthChangeByIncorrect;
+          settings.gravityShiftStrength = Math.min(0.2, Math.max(0.01, settings.gravityShiftStrength));
+        }
+
+        if (settings.magnetMode && incorrectAnswersCount % settings.everyIncorrectMagnet === 0) {
+          settings.magnetStrength += settings.magnetStrengthChangeByIncorrect;
+          settings.magnetStrength = Math.min(0.01, Math.max(0.0001, settings.magnetStrength));
+
+          settings.magnetMaxDistance += settings.magnetMaxDistanceChangeByIncorrect;
+          settings.magnetMaxDistance = Math.min(50, Math.max(10, settings.magnetMaxDistance));
+        }
+
+        if (settings.orbitFormationMode && incorrectAnswersCount % settings.everyIncorrectOrbitFormation === 0) {
+          settings.orbitFormationFrequencyMin += settings.orbitFormationFrequencyChangeByIncorrect;
+          settings.orbitFormationFrequencyMax += settings.orbitFormationFrequencyChangeByIncorrect;
+          settings.orbitFormationFrequencyMin = Math.max(1000, settings.orbitFormationFrequencyMin);
+          settings.orbitFormationFrequencyMax = Math.max(1000, settings.orbitFormationFrequencyMax);
+
+          settings.orbitFormationDuration += settings.orbitFormationDurationChangeByIncorrect;
+          settings.orbitFormationDuration = Math.min(10000, Math.max(1000, settings.orbitFormationDuration));
         }
       }
       repopulateGui();
@@ -2684,6 +2894,371 @@
       });
     }
 
+    function startGravityShiftMode() {
+      if (!settings.gravityShiftMode) return;
+      scheduleNextGravityShift();
+    }
+
+    function scheduleNextGravityShift() {
+      if (!settings.gravityShiftMode || gravityShiftScheduled) return;
+
+      const interval = getRandomInRange(settings.gravityShiftFrequencyMin, settings.gravityShiftFrequencyMax);
+      gravityShiftScheduled = true;
+
+      const timeout = setTimeout(() => {
+        if (settings.gravityShiftMode && !isUserTurn) {
+          triggerGravityShift();
+        }
+        gravityShiftScheduled = false;
+        scheduleNextGravityShift();
+      }, interval);
+
+      gravityShiftTimeouts.push(timeout);
+    }
+
+    function triggerGravityShift() {
+      const directions = settings.gravityShiftDirections;
+      if (directions.length === 0) return;
+
+      const newDirection = directions[Math.floor(Math.random() * directions.length)];
+      currentGravityDirection = newDirection;
+
+      const directionVectors = {
+        'up': new THREE.Vector3(0, settings.gravityShiftStrength, 0),
+        'down': new THREE.Vector3(0, -settings.gravityShiftStrength, 0),
+        'left': new THREE.Vector3(-settings.gravityShiftStrength, 0, 0),
+        'right': new THREE.Vector3(settings.gravityShiftStrength, 0, 0),
+        'forward': new THREE.Vector3(0, 0, settings.gravityShiftStrength),
+        'backward': new THREE.Vector3(0, 0, -settings.gravityShiftStrength)
+      };
+
+      const targetVector = directionVectors[newDirection];
+
+      currentGravityVector.lerp(targetVector, 0.1);
+
+      let eligibleBalls = settings.gravityShiftAffectTargetsOnly ? targetBalls : balls;
+      eligibleBalls.forEach(ball => {
+        if (!ball.userData.gravityVelocity) {
+          ball.userData.gravityVelocity = new THREE.Vector3();
+        }
+        ball.userData.isAffectedByGravity = true;
+      });
+    }
+
+    function applyGravityToBalls(delta) {
+      if (!settings.gravityShiftMode || currentGravityVector.length() === 0) return;
+
+      let eligibleBalls = settings.gravityShiftAffectTargetsOnly ? targetBalls : balls;
+
+      eligibleBalls.forEach(ball => {
+        if (ball.userData.isAffectedByGravity) {
+          if (!ball.userData.gravityVelocity) {
+            ball.userData.gravityVelocity = new THREE.Vector3();
+          }
+
+          ball.userData.gravityVelocity.add(currentGravityVector.clone().multiplyScalar(delta * 60));
+
+          const damping = 0.98;
+          ball.userData.gravityVelocity.multiplyScalar(damping);
+
+          ball.position.add(ball.userData.gravityVelocity.clone().multiplyScalar(delta));
+
+          const halfBoxSize = settings.boxSize / 2;
+          const ballRadius = 1.5;
+
+          if (Math.abs(ball.position.x) > halfBoxSize - ballRadius) {
+            ball.position.x = Math.sign(ball.position.x) * (halfBoxSize - ballRadius);
+            ball.userData.gravityVelocity.x *= -0.5;
+          }
+          if (Math.abs(ball.position.y) > halfBoxSize - ballRadius) {
+            ball.position.y = Math.sign(ball.position.y) * (halfBoxSize - ballRadius);
+            ball.userData.gravityVelocity.y *= -0.5;
+          }
+          if (Math.abs(ball.position.z) > halfBoxSize - ballRadius) {
+            ball.position.z = Math.sign(ball.position.z) * (halfBoxSize - ballRadius);
+            ball.userData.gravityVelocity.z *= -0.5;
+          }
+        }
+      });
+    }
+
+    function clearGravityShiftTimeouts() {
+      gravityShiftTimeouts.forEach(timeout => clearTimeout(timeout));
+      gravityShiftTimeouts = [];
+      gravityShiftScheduled = false;
+      currentGravityDirection = null;
+      currentGravityVector.set(0, 0, 0);
+
+      balls.forEach(ball => {
+        if (ball.userData.gravityVelocity) {
+          ball.userData.gravityVelocity.set(0, 0, 0);
+        }
+        ball.userData.isAffectedByGravity = false;
+      });
+    }
+
+    function startMagnetMode() {
+      if (!settings.magnetMode) return;
+
+      balls.forEach(ball => {
+        if (settings.magnetForceType === 'mixed') {
+          ball.userData.magneticCharge = Math.random() > 0.5 ? 1 : -1;
+        } else if (settings.magnetForceType === 'repel') {
+          ball.userData.magneticCharge = 1;
+        } else {
+          ball.userData.magneticCharge = 1;
+        }
+        ball.userData.magnetForce = new THREE.Vector3(0, 0, 0);
+        ball.userData.isMagnetic = true;
+      });
+    }
+
+    function updateMagneticForces() {
+      if (!settings.magnetMode) return;
+
+      magnetFrameCounter++;
+      if (magnetFrameCounter % settings.magnetUpdateFrequency !== 0) return;
+
+      let eligibleBalls = settings.magnetAffectTargetsOnly ? targetBalls : balls;
+
+      eligibleBalls.forEach(ball => {
+        if (!ball.userData.magnetForce) {
+          ball.userData.magnetForce = new THREE.Vector3(0, 0, 0);
+        }
+        ball.userData.magnetForce.set(0, 0, 0);
+      });
+
+      for (let i = 0; i < eligibleBalls.length; i++) {
+        for (let j = i + 1; j < eligibleBalls.length; j++) {
+          const ball1 = eligibleBalls[i];
+          const ball2 = eligibleBalls[j];
+
+          if (!settings.magnetTargetToDistractor) {
+            const isBall1Target = targetBalls.includes(ball1);
+            const isBall2Target = targetBalls.includes(ball2);
+            if (isBall1Target !== isBall2Target) {
+              continue;
+            }
+          }
+
+          const force = calculateMagneticForce(ball1, ball2);
+          if (force) {
+            ball1.userData.magnetForce.add(force);
+            ball2.userData.magnetForce.sub(force);
+          }
+        }
+      }
+
+      applyMagneticForces();
+    }
+
+    function calculateMagneticForce(ball1, ball2) {
+      const direction = new THREE.Vector3().subVectors(ball2.position, ball1.position);
+      const distance = direction.length();
+
+      if (distance < settings.magnetMinDistance || distance > settings.magnetMaxDistance) {
+        return null;
+      }
+
+      if (distance === 0) return null;
+
+      direction.normalize();
+
+      const charge1 = ball1.userData.magneticCharge || 1;
+      const charge2 = ball2.userData.magneticCharge || 1;
+
+      let forceMagnitude;
+      if (settings.magnetForceType === 'repel') {
+        forceMagnitude = settings.magnetStrength / (distance * distance);
+      } else if (settings.magnetForceType === 'attract') {
+        forceMagnitude = -settings.magnetStrength / (distance * distance);
+      } else {
+        forceMagnitude = -(charge1 * charge2 * settings.magnetStrength) / (distance * distance);
+      }
+
+      const maxForce = 0.5;
+      forceMagnitude = Math.max(-maxForce, Math.min(maxForce, forceMagnitude));
+
+      return direction.multiplyScalar(forceMagnitude);
+    }
+
+    function applyMagneticForces() {
+      let eligibleBalls = settings.magnetAffectTargetsOnly ? targetBalls : balls;
+
+      eligibleBalls.forEach(ball => {
+        if (ball.userData.magnetForce && ball.userData.isMagnetic) {
+          ball.userData.velocity.add(ball.userData.magnetForce);
+
+          const maxSpeed = settings.ballSpeed * 2;
+          if (ball.userData.velocity.length() > maxSpeed) {
+            ball.userData.velocity.normalize().multiplyScalar(maxSpeed);
+          }
+        }
+      });
+    }
+
+    function clearMagnetMode() {
+      magnetFrameCounter = 0;
+      balls.forEach(ball => {
+        if (ball.userData.magnetForce) {
+          ball.userData.magnetForce.set(0, 0, 0);
+        }
+        ball.userData.magneticCharge = 0;
+        ball.userData.isMagnetic = false;
+      });
+    }
+
+    function startOrbitFormationMode() {
+      if (!settings.orbitFormationMode) return;
+      scheduleNextOrbitFormation();
+    }
+
+    function scheduleNextOrbitFormation() {
+      if (!settings.orbitFormationMode || orbitFormationScheduled) return;
+
+      const interval = getRandomInRange(settings.orbitFormationFrequencyMin, settings.orbitFormationFrequencyMax);
+      orbitFormationScheduled = true;
+
+      const timeout = setTimeout(() => {
+        if (settings.orbitFormationMode && !isUserTurn) {
+          triggerOrbitFormation();
+        }
+        orbitFormationScheduled = false;
+        scheduleNextOrbitFormation();
+      }, interval);
+
+      orbitFormationTimeouts.push(timeout);
+    }
+
+    function triggerOrbitFormation() {
+      let eligibleBalls = settings.orbitFormationAffectTargetsOnly ? targetBalls : balls;
+
+      if (eligibleBalls.length < 2) return;
+
+      const numBallsToAffect = Math.ceil((eligibleBalls.length * settings.orbitFormationAffectPercentage) / 100);
+      const shuffledBalls = shuffleArray([...eligibleBalls]);
+      const selectedBalls = shuffledBalls.slice(0, numBallsToAffect);
+
+      const centerPos = new THREE.Vector3();
+      selectedBalls.forEach(ball => centerPos.add(ball.position));
+      centerPos.divideScalar(selectedBalls.length);
+
+      const formation = {
+        balls: selectedBalls,
+        center: centerPos,
+        radius: settings.orbitFormationRadius,
+        startTime: Date.now(),
+        duration: settings.orbitFormationDuration,
+        rotationSpeed: settings.orbitFormationRotationSpeed,
+        phase: 'entering',
+        entryData: selectedBalls.map(ball => ({
+          ball: ball,
+          originalPosition: ball.position.clone(),
+          originalVelocity: ball.userData.velocity.clone(),
+          angle: Math.atan2(ball.position.z - centerPos.z, ball.position.x - centerPos.x)
+        }))
+      };
+
+      selectedBalls.forEach((ball, index) => {
+        ball.userData.isInFormation = true;
+        ball.userData.formationData = formation;
+        ball.userData.formationAngle = formation.entryData[index].angle;
+      });
+
+      activeFormations.push(formation);
+    }
+
+    function updateOrbitFormations(delta) {
+      if (!settings.orbitFormationMode || activeFormations.length === 0) return;
+
+      const currentTime = Date.now();
+
+      for (let i = activeFormations.length - 1; i >= 0; i--) {
+        const formation = activeFormations[i];
+        const elapsed = currentTime - formation.startTime;
+
+        if (formation.phase === 'entering') {
+          const progress = Math.min(elapsed / settings.orbitFormationTransitionDuration, 1);
+          const easedProgress = Easing.easeInOutCubic(progress);
+
+          formation.entryData.forEach((entry, index) => {
+            const targetX = formation.center.x + formation.radius * Math.cos(entry.angle);
+            const targetY = entry.originalPosition.y;
+            const targetZ = formation.center.z + formation.radius * Math.sin(entry.angle);
+
+            entry.ball.position.lerpVectors(
+              entry.originalPosition,
+              new THREE.Vector3(targetX, targetY, targetZ),
+              easedProgress
+            );
+          });
+
+          if (progress >= 1) {
+            formation.phase = 'active';
+            formation.startTime = currentTime;
+          }
+        } else if (formation.phase === 'active') {
+          const angularVelocity = formation.rotationSpeed * delta;
+
+          formation.balls.forEach((ball, index) => {
+            const entry = formation.entryData[index];
+            entry.angle += angularVelocity;
+
+            const x = formation.center.x + formation.radius * Math.cos(entry.angle);
+            const z = formation.center.z + formation.radius * Math.sin(entry.angle);
+
+            ball.position.x = x;
+            ball.position.z = z;
+            ball.userData.velocity.set(0, 0, 0);
+          });
+
+          if (elapsed > formation.duration) {
+            formation.phase = 'exiting';
+            formation.startTime = currentTime;
+          }
+        } else if (formation.phase === 'exiting') {
+          const progress = Math.min(elapsed / settings.orbitFormationTransitionDuration, 1);
+          const easedProgress = Easing.easeInOutCubic(progress);
+
+          formation.entryData.forEach((entry, index) => {
+            const currentPos = entry.ball.position.clone();
+            entry.ball.position.lerpVectors(
+              currentPos,
+              entry.originalPosition,
+              easedProgress
+            );
+
+            if (progress >= 1) {
+              entry.ball.userData.isInFormation = false;
+              entry.ball.userData.formationData = null;
+              entry.ball.userData.velocity.copy(entry.originalVelocity);
+            }
+          });
+
+          if (progress >= 1) {
+            activeFormations.splice(i, 1);
+          }
+        }
+      }
+    }
+
+    function clearOrbitFormationTimeouts() {
+      orbitFormationTimeouts.forEach(timeout => clearTimeout(timeout));
+      orbitFormationTimeouts = [];
+      orbitFormationScheduled = false;
+
+      activeFormations.forEach(formation => {
+        formation.balls.forEach((ball, index) => {
+          const entry = formation.entryData[index];
+          ball.userData.isInFormation = false;
+          ball.userData.formationData = null;
+          ball.userData.velocity.copy(entry.originalVelocity);
+        });
+      });
+
+      activeFormations = [];
+    }
+
     function onWindowResize() {
       camera.aspect = window.innerWidth / window.innerHeight;
       camera.updateProjectionMatrix();
@@ -2706,6 +3281,9 @@
       // Update balls position with delta time for frame-rate independence
       if (!isUserTurn) {
         updateBallPositions(delta);
+        applyGravityToBalls(delta);
+        updateMagneticForces();
+        updateOrbitFormations(delta);
       }
 
       updateColorSwaps();
