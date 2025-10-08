@@ -6,6 +6,113 @@
 import * as THREE from 'three';
 
 /**
+ * Central animation manager to consolidate all animation frame loops
+ */
+class AnimationManager {
+  constructor() {
+    this.activeAnimations = [];
+    this.isRunning = false;
+    this.animationId = null;
+  }
+
+  /**
+   * Add an animation to be managed
+   * @param {Function} updateFn - Function called each frame with (progress, elapsed)
+   * @param {number} duration - Duration in ms
+   * @param {Function} onComplete - Callback when animation completes
+   * @returns {Object} Animation handle with cancel method
+   */
+  add(updateFn, duration, onComplete = null) {
+    const animation = {
+      startTime: Date.now(),
+      duration,
+      updateFn,
+      onComplete,
+      cancelled: false
+    };
+
+    this.activeAnimations.push(animation);
+
+    // Start main loop if not running
+    if (!this.isRunning) {
+      this.start();
+    }
+
+    // Return handle to allow cancellation
+    return {
+      cancel: () => {
+        animation.cancelled = true;
+      }
+    };
+  }
+
+  /**
+   * Start the main animation loop
+   */
+  start() {
+    if (this.isRunning) return;
+    this.isRunning = true;
+    this.update();
+  }
+
+  /**
+   * Main update loop
+   */
+  update() {
+    const now = Date.now();
+    
+    // Update all active animations
+    this.activeAnimations = this.activeAnimations.filter(animation => {
+      if (animation.cancelled) return false;
+
+      const elapsed = now - animation.startTime;
+      const progress = Math.min(elapsed / animation.duration, 1);
+
+      // Call update function
+      animation.updateFn(progress, elapsed);
+
+      // Check if complete
+      if (progress >= 1) {
+        if (animation.onComplete) animation.onComplete();
+        return false; // Remove from active list
+      }
+
+      return true; // Keep in active list
+    });
+
+    // Continue loop if there are active animations
+    if (this.activeAnimations.length > 0) {
+      this.animationId = requestAnimationFrame(() => this.update());
+    } else {
+      this.isRunning = false;
+      this.animationId = null;
+    }
+  }
+
+  /**
+   * Stop all animations
+   */
+  stopAll() {
+    this.activeAnimations = [];
+    if (this.animationId) {
+      cancelAnimationFrame(this.animationId);
+      this.animationId = null;
+    }
+    this.isRunning = false;
+  }
+
+  /**
+   * Get count of active animations
+   */
+  getActiveCount() {
+    return this.activeAnimations.length;
+  }
+}
+
+// Export singleton instance
+export const animationManager = new AnimationManager();
+
+/**
  * Custom easing functions (no external library needed)
  */
 export const Easing = {
@@ -62,93 +169,52 @@ export const Easing = {
 };
 
 /**
- * Animate ball bounce on spawn
- * @param {THREE.Mesh} ball - Ball mesh
- * @param {number} duration - Animation duration in ms
- */
-export function animateBallSpawn(ball, duration = 500) {
-  const startTime = Date.now();
-  const startScale = 0.1;
-  const targetScale = 1.0;
-  const startY = ball.position.y;
-
-  function animate() {
-    const elapsed = Date.now() - startTime;
-    const progress = Math.min(elapsed / duration, 1);
-    
-    // Bounce effect
-    const scale = startScale + (targetScale - startScale) * Easing.easeOutElastic(progress);
-    ball.scale.set(scale, scale, scale);
-    
-    // Slight upward movement
-    const yOffset = Math.sin(progress * Math.PI) * 2;
-    ball.position.y = startY + yOffset;
-    
-    ball.userData.animationProgress = progress;
-    
-    if (progress < 1) {
-      requestAnimationFrame(animate);
-    } else {
-      ball.scale.set(1, 1, 1);
-      ball.position.y = startY;
-    }
-  }
-  
-  animate();
-}
-
-/**
  * Animate ball selection feedback
  * @param {THREE.Mesh} ball - Ball mesh
  * @param {boolean} isCorrect - Whether selection was correct
  * @param {THREE.Scene} scene - Scene to add particles to
+ * @returns {Object} Animation handle
  */
 export function animateBallSelection(ball, isCorrect, scene) {
-  const startTime = Date.now();
   const duration = 500;
   const startScale = ball.scale.x;
   const originalPosition = ball.position.clone();
   
-  function animate() {
-    const elapsed = Date.now() - startTime;
-    const progress = Math.min(elapsed / duration, 1);
-    
-    if (isCorrect) {
-      // Bounce effect
-      const targetScale = 1.2;
-      const scale = startScale + (targetScale - startScale) * Easing.easeOutElastic(progress);
-      ball.scale.set(scale, scale, scale);
-      
-      // Glow effect
-      if (ball.material.emissiveIntensity !== undefined) {
-        ball.material.emissiveIntensity = 0.3 * (1 - progress);
+  // Create particle burst for correct selection
+  if (isCorrect) {
+    createParticleBurst(ball.position, 0xFFD700, scene);
+  }
+
+  return animationManager.add(
+    (progress) => {
+      if (isCorrect) {
+        // Bounce effect
+        const targetScale = 1.2;
+        const scale = startScale + (targetScale - startScale) * Easing.easeOutElastic(progress);
+        ball.scale.set(scale, scale, scale);
+        
+        // Glow effect
+        if (ball.material.emissiveIntensity !== undefined) {
+          ball.material.emissiveIntensity = 0.3 * (1 - progress);
+        }
+      } else {
+        // Shake effect
+        const shakeAmount = 0.3 * (1 - progress);
+        const offsetX = Math.sin(progress * 40) * shakeAmount;
+        const offsetY = Math.sin(progress * 35) * shakeAmount;
+        ball.position.x = originalPosition.x + offsetX;
+        ball.position.y = originalPosition.y + offsetY;
       }
-    } else {
-      // Shake effect
-      const shakeAmount = 0.3 * (1 - progress);
-      const offsetX = Math.sin(progress * 40) * shakeAmount;
-      const offsetY = Math.sin(progress * 35) * shakeAmount;
-      ball.position.x = originalPosition.x + offsetX;
-      ball.position.y = originalPosition.y + offsetY;
-    }
-    
-    if (progress < 1) {
-      requestAnimationFrame(animate);
-    } else {
+    },
+    duration,
+    () => {
       ball.scale.set(1, 1, 1);
       ball.position.copy(originalPosition);
       if (ball.material.emissiveIntensity !== undefined) {
         ball.material.emissiveIntensity = 0.05;
       }
     }
-  }
-  
-  animate();
-  
-  // Create particle burst for correct selection
-  if (isCorrect) {
-    createParticleBurst(ball.position, 0xFFD700, scene);
-  }
+  );
 }
 
 /**
@@ -156,6 +222,7 @@ export function animateBallSelection(ball, isCorrect, scene) {
  * @param {THREE.Vector3} position - Position to create burst
  * @param {number} color - Particle color
  * @param {THREE.Scene} scene - Scene to add particles to
+ * @returns {Object} Animation handle
  */
 export function createParticleBurst(position, color, scene) {
   const particleCount = 30;
@@ -192,15 +259,10 @@ export function createParticleBurst(position, color, scene) {
   const particles = new THREE.Points(geometry, material);
   scene.add(particles);
   
-  // Animate particles
-  const startTime = Date.now();
   const duration = 800;
   
-  function animateParticles() {
-    const elapsed = Date.now() - startTime;
-    const progress = elapsed / duration;
-    
-    if (progress < 1) {
+  return animationManager.add(
+    (progress) => {
       const positions = particles.geometry.attributes.position.array;
       for (let i = 0; i < particleCount; i++) {
         positions[i * 3] += velocities[i * 3];
@@ -212,16 +274,14 @@ export function createParticleBurst(position, color, scene) {
       }
       particles.geometry.attributes.position.needsUpdate = true;
       particles.material.opacity = 1 - progress;
-      
-      requestAnimationFrame(animateParticles);
-    } else {
+    },
+    duration,
+    () => {
       scene.remove(particles);
       particles.geometry.dispose();
       particles.material.dispose();
     }
-  }
-  
-  animateParticles();
+  );
 }
 
 /**
@@ -229,47 +289,46 @@ export function createParticleBurst(position, color, scene) {
  * @param {THREE.Mesh} ball - Ball mesh
  * @param {number} targetColor - Target color (hex)
  * @param {number} duration - Transition duration in ms
+ * @returns {Object} Animation handle
  */
 export function animateColorTransition(ball, targetColor, duration = 300) {
-  const startTime = Date.now();
   const startColor = new THREE.Color(ball.material.color.getHex());
   const endColor = new THREE.Color(targetColor);
   
-  function animate() {
-    const elapsed = Date.now() - startTime;
-    const progress = Math.min(elapsed / duration, 1);
-    
-    ball.material.color.copy(startColor).lerp(endColor, Easing.easeInOutCubic(progress));
-    
-    if (progress < 1) {
-      requestAnimationFrame(animate);
-    }
-  }
-  
-  animate();
+  return animationManager.add(
+    (progress) => {
+      ball.material.color.copy(startColor).lerp(endColor, Easing.easeInOutCubic(progress));
+    },
+    duration
+  );
 }
 
 /**
- * Pulse animation for highlighted balls
+ * Pulse animation for highlighted balls (continuous loop)
  * @param {THREE.Mesh} ball - Ball mesh
  * @param {number} intensity - Pulse intensity
+ * @returns {Object} Animation handle
  */
 export function pulseBall(ball, intensity = 0.2) {
+  // Use a very long duration to simulate continuous animation
+  // This will be cancelled manually when ball is no longer highlighted
+  const duration = Number.MAX_SAFE_INTEGER;
   const startTime = Date.now();
   
-  function animate() {
-    if (!ball.userData.isCurrentlyHighlighted) return;
-    
-    const elapsed = Date.now() - startTime;
-    const cycle = (elapsed % 1000) / 1000; // 1 second cycle
-    
-    const scale = 1.0 + Math.sin(cycle * Math.PI * 2) * intensity;
-    ball.scale.set(scale, scale, scale);
-    
-    requestAnimationFrame(animate);
-  }
-  
-  animate();
+  return animationManager.add(
+    () => {
+      if (!ball.userData.isCurrentlyHighlighted) {
+        return; // Will be cancelled externally
+      }
+      
+      const elapsed = Date.now() - startTime;
+      const cycle = (elapsed % 1000) / 1000; // 1 second cycle
+      
+      const scale = 1.0 + Math.sin(cycle * Math.PI * 2) * intensity;
+      ball.scale.set(scale, scale, scale);
+    },
+    duration
+  );
 }
 
 /**
@@ -278,9 +337,9 @@ export function pulseBall(ball, intensity = 0.2) {
  * @param {boolean} fadeIn - True to fade in, false to fade out
  * @param {number} duration - Animation duration in ms
  * @param {Function} onComplete - Callback when complete
+ * @returns {Object} Animation handle
  */
 export function fadeObject(object, fadeIn, duration = 500, onComplete = null) {
-  const startTime = Date.now();
   const startOpacity = fadeIn ? 0 : 1;
   const endOpacity = fadeIn ? 1 : 0;
   
@@ -290,23 +349,16 @@ export function fadeObject(object, fadeIn, duration = 500, onComplete = null) {
     object.material.opacity = startOpacity;
   }
   
-  function animate() {
-    const elapsed = Date.now() - startTime;
-    const progress = Math.min(elapsed / duration, 1);
-    
-    const opacity = startOpacity + (endOpacity - startOpacity) * Easing.easeInOutSine(progress);
-    
-    if (object.material) {
-      object.material.opacity = opacity;
-    }
-    
-    if (progress < 1) {
-      requestAnimationFrame(animate);
-    } else {
-      if (onComplete) onComplete();
-    }
-  }
-  
-  animate();
+  return animationManager.add(
+    (progress) => {
+      const opacity = startOpacity + (endOpacity - startOpacity) * Easing.easeInOutSine(progress);
+      
+      if (object.material) {
+        object.material.opacity = opacity;
+      }
+    },
+    duration,
+    onComplete
+  );
 }
 

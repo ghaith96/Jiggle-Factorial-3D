@@ -70,18 +70,22 @@ export class TouchControls {
       if (tapGap < 300 && tapGap > 0 && !isUserTurn) {
         // Double tap detected (only when not selecting balls)
         event.preventDefault();
+        event.stopPropagation();
         this.resetCamera();
         vibrateDevice(50); // Short vibration for camera reset
       } else if (isUserTurn) {
-        // Single tap for ball selection - use existing mouse handler
+        // Single tap for ball selection - prioritize selection over camera controls
+        // preventDefault stops OrbitControls from interfering
         event.preventDefault();
-        // Don't handle here, pointerdown will handle it
+        event.stopPropagation();
+        // pointerdown event will handle the actual selection
       }
       
       this.touchState.lastTapTime = currentTime;
     } else if (event.touches.length === 2) {
-      // Initialize pinch/rotate gesture
+      // Initialize pinch/rotate gesture - prevent default to stop OrbitControls
       event.preventDefault();
+      event.stopPropagation();
       this.touchState.initialDistance = this.getTouchDistance(event.touches);
       this.touchState.initialCameraDistance = this.camera.position.length();
       this.touchState.lastTouches = Array.from(event.touches);
@@ -93,8 +97,12 @@ export class TouchControls {
    * @param {TouchEvent} event - Touch event
    */
   onTouchMove(event) {
+    const isUserTurn = this.isUserTurnCallback ? this.isUserTurnCallback() : false;
+
     if (event.touches.length === 2) {
+      // Two-finger gestures have priority over OrbitControls
       event.preventDefault();
+      event.stopPropagation();
 
       // Handle pinch zoom
       const currentDistance = this.getTouchDistance(event.touches);
@@ -110,6 +118,10 @@ export class TouchControls {
       this.camera.position.copy(direction.multiplyScalar(newDistance));
 
       this.touchState.lastTouches = Array.from(event.touches);
+    } else if (event.touches.length === 1 && isUserTurn) {
+      // Prevent OrbitControls from interfering during ball selection
+      event.preventDefault();
+      event.stopPropagation();
     }
   }
 
@@ -118,6 +130,14 @@ export class TouchControls {
    * @param {TouchEvent} event - Touch event
    */
   onTouchEnd(event) {
+    const isUserTurn = this.isUserTurnCallback ? this.isUserTurnCallback() : false;
+    
+    // If user is selecting balls, prevent OrbitControls from handling the event
+    if (isUserTurn && event.touches.length === 0) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+    
     if (event.touches.length < 2) {
       this.touchState.initialDistance = 0;
     }
