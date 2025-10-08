@@ -38,12 +38,16 @@ export class BallPool {
    * @returns {THREE.Mesh} Ball mesh
    */
   createBall() {
-    // Use shared geometry
-    const material = new THREE.MeshStandardMaterial({
-      metalness: 0.6,
-      roughness: 0.65,
+    // Use premium PBR material for realistic rendering
+    const material = new THREE.MeshPhysicalMaterial({
+      metalness: 0.3,
+      roughness: 0.2,
+      clearcoat: 1.0,
+      clearcoatRoughness: 0.1,
+      reflectivity: 0.9,
+      envMapIntensity: 1.5,
       emissive: "#FFFFFF",
-      emissiveIntensity: 0.1,
+      emissiveIntensity: 0.05,
     });
     const ball = new THREE.Mesh(this.sharedGeometry, material);
     ball.castShadow = true;
@@ -58,15 +62,17 @@ export class BallPool {
       isGameObject: true,
       isCurrentlyHighlighted: false,
       isFlashing: false,
-      label: null
+      label: null,
+      animationProgress: 0, // For spawn/despawn animations
+      targetScale: 1.0 // For smooth scaling
     };
 
-    // Create outline once
+    // Create outline once with better visuals
     const outlineMaterial = new THREE.MeshBasicMaterial({
       color: 0x000000,
       side: THREE.BackSide,
       depthWrite: false,
-      opacity: 0.5,
+      opacity: 0.4,
       transparent: true,
     });
     const outline = new THREE.Mesh(this.sharedOutlineGeometry, outlineMaterial);

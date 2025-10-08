@@ -340,6 +340,22 @@
       exportToCSV,
       downloadCSV
     } from './js/storage.js';
+    import {
+      Easing,
+      animateBallSpawn,
+      animateBallSelection,
+      createParticleBurst,
+      animateColorTransition,
+      pulseBall,
+      fadeObject
+    } from './js/animations.js';
+    import {
+      createPremiumLighting,
+      animateLightForGameState,
+      addDynamicLightAnimation,
+      createLightFlash,
+      updateLightingForPreset
+    } from './js/lighting.js';
 
     // Make THREE globally available for debugging
     window.THREE = THREE;
@@ -617,32 +633,18 @@
       controls.enableRotate = true;
       controls.enablePan = true;
 
-      // Lighting with optimized shadow quality based on device
-      const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
-      scene.add(ambientLight);
+      // Premium lighting system with hemisphere, rim, and fill lights
+      const lights = createPremiumLighting(scene, { isMobile });
 
-      const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
-      directionalLight.position.set(50, 50, 50);
-      directionalLight.castShadow = true;
-      // Reduce shadow map size on mobile for memory savings
-      directionalLight.shadow.mapSize.width = isMobile ? 512 : 1024;
-      directionalLight.shadow.mapSize.height = isMobile ? 512 : 1024;
-      directionalLight.shadow.camera.near = 0.5;
-      directionalLight.shadow.camera.far = 500;
-      scene.add(directionalLight);
+      // Store lights globally for dynamic updates
+      window.gameLights = lights;
 
-      const spotlight1 = new THREE.SpotLight(0xffffff, 0.6);
-      spotlight1.position.set(-50, 50, -50);
-      spotlight1.castShadow = true;
-      scene.add(spotlight1);
+      // Add dynamic light animation for premium feel
+      addDynamicLightAnimation(lights);
 
-      const spotlight2 = new THREE.SpotLight(0xffffff, 0.6);
-      spotlight2.position.set(50, -50, 50);
-      spotlight2.castShadow = true;
-      scene.add(spotlight2);
-
-      const pointLight = new THREE.PointLight(0xffffff, 0.5);
-      camera.add(pointLight);
+      // Add point light to camera for better ball visibility
+      const cameraLight = new THREE.PointLight(0xffffff, 0.3);
+      camera.add(cameraLight);
       scene.add(camera);
 
       // GUI Setup
@@ -838,6 +840,14 @@
           saveSettings();
         });
       });
+
+      // Hide dat.GUI by default on mobile (user can still access premium panel)
+      if (isMobile) {
+        const guiContainer = document.getElementById('gui-container');
+        if (guiContainer) {
+          guiContainer.style.display = 'none';
+        }
+      }
 
       // Event Listeners for Graph Buttons
       showGraphButton.addEventListener('click', () => {
@@ -1082,7 +1092,7 @@
       // Create an array to store positions to prevent overlapping
       const positions = [];
 
-      // Create Target Balls
+      // Create Target Balls with staggered spawn animation
       for (let i = 0; i < settings.level; i++) {
         const ball = ballPool.acquire(0x87CEEB); // Sky blue ball
 
@@ -1091,9 +1101,12 @@
 
         balls.push(ball);
         targetBalls.push(ball);
+
+        // Add spawn animation with stagger
+        setTimeout(() => animateBallSpawn(ball, 500), i * 50);
       }
 
-      // Create Blue Distractor Balls
+      // Create Blue Distractor Balls with staggered spawn animation
       for (let i = 0; i < settings.numBlueDistractors; i++) {
         const ball = ballPool.acquire(0x87CEEB); // Sky blue ball
 
@@ -1102,9 +1115,13 @@
 
         balls.push(ball);
         distractorBalls.push(ball);
+
+        // Add spawn animation with stagger
+        const delay = (settings.level + i) * 50;
+        setTimeout(() => animateBallSpawn(ball, 500), delay);
       }
 
-      // Create Colored Distractor Balls
+      // Create Colored Distractor Balls with staggered spawn animation
       for (let i = 0; i < settings.numColoredDistractors; i++) {
         const color = getRandomColor([0x87CEEB, 0xff0000, 0xffff00]); // Exclude sky blue, red, yellow
         const ball = ballPool.acquire(color);
@@ -1114,10 +1131,15 @@
 
         balls.push(ball);
         coloredDistractorBalls.push(ball);
+
+        // Add spawn animation with stagger
+        const delay = (settings.level + settings.numBlueDistractors + i) * 50;
+        setTimeout(() => animateBallSpawn(ball, 500), delay);
       }
 
-      // Assign Movement
-      assignMovement();
+      // Assign Movement after all balls are spawned
+      const totalDelay = totalBalls * 50 + 500;
+      setTimeout(() => assignMovement(), totalDelay);
     }
 
     function createBall(color) {
@@ -1413,23 +1435,23 @@
         if (targetBalls.includes(parentBall)) {
           // Check if the selected ball is the correct one in the sequence
           if (parentBall === targetSequence[userSequence.length - 1].ball && !mistakeMade) {
-            // Correct selection
-            parentBall.material.color.set(0xffff00); // Turn yellow
+            // Correct selection - smooth color transition and particle effect
+            animateColorTransition(parentBall, 0xffff00, 300);
+            animateBallSelection(parentBall, true, scene);
+            createLightFlash(parentBall.position, scene, 0xFFD700, 500);
             vibrateDevice(50); // Short vibration for correct selection
           } else {
             // Wrong sequence but correct target ball
-            if (settings.isRegular3DMOT) {
-              parentBall.material.color.set(0xffff00); // bright yellow when out-of-order in 3D MOT
-            } else {
-              parentBall.material.color.set(0xffa500); // orange otherwise
-            }
-
+            const targetColor = settings.isRegular3DMOT ? 0xffff00 : 0xffa500;
+            animateColorTransition(parentBall, targetColor, 300);
+            animateBallSelection(parentBall, false, scene);
             mistakeMade = true;
             vibrateDevice([50, 50, 50]); // Pattern for wrong order
           }
         } else {
-          // Player selected a distractor ball
-          parentBall.material.color.set(0xff0000); // Turn red
+          // Player selected a distractor ball - shake animation
+          animateColorTransition(parentBall, 0xff0000, 300);
+          animateBallSelection(parentBall, false, scene);
           mistakeMade = true;
           vibrateDevice(200); // Long vibration for wrong ball
         }
