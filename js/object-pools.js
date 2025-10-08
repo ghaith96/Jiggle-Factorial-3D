@@ -64,7 +64,17 @@ export class BallPool {
       isFlashing: false,
       label: null,
       animationProgress: 0, // For spawn/despawn animations
-      targetScale: 1.0 // For smooth scaling
+      targetScale: 1.0, // For smooth scaling
+      baseSpeed: null,
+      currentSpeedMultiplier: 1.0,
+      isSpeedBursting: false,
+      speedBurstEndTime: 0,
+      isColorSwapping: false,
+      targetColor: null,
+      colorSwapProgress: 0,
+      colorSwapStartTime: 0,
+      initialColor: null,
+      swapStartColor: null
     };
 
     // Create subtle outline for depth
@@ -121,6 +131,18 @@ export class BallPool {
     ball.material.emissive.set(0xFFFFFF);
     ball.material.emissiveIntensity = 0.05;
     ball.scale.set(1, 1, 1);
+    // Reset Speed Burst properties
+    ball.userData.baseSpeed = null;
+    ball.userData.currentSpeedMultiplier = 1.0;
+    ball.userData.isSpeedBursting = false;
+    ball.userData.speedBurstEndTime = 0;
+    // Reset Color Swap properties
+    ball.userData.isColorSwapping = false;
+    ball.userData.targetColor = null;
+    ball.userData.colorSwapProgress = 0;
+    ball.userData.colorSwapStartTime = 0;
+    ball.userData.initialColor = null;
+    ball.userData.swapStartColor = null;
     // Remove label if attached
     if (ball.userData.label && this.labelPool) {
       this.labelPool.release(ball.userData.label);

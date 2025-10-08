@@ -571,6 +571,11 @@
     let isGameStarting = false; // Prevent multiple initializations
     let flashModeTimeouts = []; // To store timeouts related to Flash Mode
     let mistakeMade = false; // Flag to track if a mistake has been made
+    let speedBurstTimeouts = [];
+    let speedBurstScheduled = false;
+    let colorSwapTimeouts = [];
+    let colorSwapScheduled = false;
+    let activeColorSwaps = [];
 
     // New variables for score tracking
     let totalTrials = 0;
@@ -910,6 +915,33 @@
         delayAfterChangeByIncorrect: 0,
         everyIncorrectDelayAfter: 1,
         trialStartDelay: 2000,
+        speedBurstMode: false,
+        speedBurstFrequencyMin: 3000,
+        speedBurstFrequencyMax: 7000,
+        speedBurstMultiplierMin: 1.5,
+        speedBurstMultiplierMax: 3.0,
+        speedBurstDuration: 2000,
+        speedBurstAffectTargetsOnly: false,
+        speedBurstAffectPercentage: 50,
+        speedBurstFrequencyChangeByCorrect: -200,
+        everyCorrectSpeedBurst: 3,
+        speedBurstFrequencyChangeByIncorrect: 200,
+        everyIncorrectSpeedBurst: 2,
+        speedBurstMultiplierChangeByCorrect: 0.1,
+        speedBurstMultiplierChangeByIncorrect: -0.1,
+        colorSwapMode: false,
+        colorSwapFrequencyMin: 4000,
+        colorSwapFrequencyMax: 8000,
+        colorSwapDuration: 1000,
+        colorSwapTargetBehavior: 'all',
+        colorSwapAffectPercentage: 50,
+        colorSwapVisualEffect: true,
+        colorSwapFrequencyChangeByCorrect: -200,
+        everyCorrectColorSwap: 3,
+        colorSwapFrequencyChangeByIncorrect: 200,
+        everyIncorrectColorSwap: 2,
+        colorSwapAffectPercentageChangeByCorrect: 5,
+        colorSwapAffectPercentageChangeByIncorrect: -5,
       };
 
       settings = {
@@ -1025,6 +1057,41 @@
       delayTimerAdjustmentFolder.add(settings, 'everyCorrectDelayAfter').name('Every Correct').min(1).step(1);
       delayTimerAdjustmentFolder.add(settings, 'delayAfterChangeByIncorrect').name('Change by');
       delayTimerAdjustmentFolder.add(settings, 'everyIncorrectDelayAfter').name('Every Incorrect').min(1).step(1);
+
+      const speedBurstAdjustmentFolder = autoProgressionFolder.addFolder('Speed Burst Adjustment');
+      speedBurstAdjustmentFolder.add(settings, 'speedBurstFrequencyChangeByCorrect').name('Frequency Change (Correct)');
+      speedBurstAdjustmentFolder.add(settings, 'everyCorrectSpeedBurst').name('Every Correct').min(1).step(1);
+      speedBurstAdjustmentFolder.add(settings, 'speedBurstFrequencyChangeByIncorrect').name('Frequency Change (Incorrect)');
+      speedBurstAdjustmentFolder.add(settings, 'everyIncorrectSpeedBurst').name('Every Incorrect').min(1).step(1);
+      speedBurstAdjustmentFolder.add(settings, 'speedBurstMultiplierChangeByCorrect').name('Multiplier Change (Correct)');
+      speedBurstAdjustmentFolder.add(settings, 'speedBurstMultiplierChangeByIncorrect').name('Multiplier Change (Incorrect)');
+
+      const colorSwapAdjustmentFolder = autoProgressionFolder.addFolder('Color Swap Adjustment');
+      colorSwapAdjustmentFolder.add(settings, 'colorSwapFrequencyChangeByCorrect').name('Frequency Change (Correct)');
+      colorSwapAdjustmentFolder.add(settings, 'everyCorrectColorSwap').name('Every Correct').min(1).step(1);
+      colorSwapAdjustmentFolder.add(settings, 'colorSwapFrequencyChangeByIncorrect').name('Frequency Change (Incorrect)');
+      colorSwapAdjustmentFolder.add(settings, 'everyIncorrectColorSwap').name('Every Incorrect').min(1).step(1);
+      colorSwapAdjustmentFolder.add(settings, 'colorSwapAffectPercentageChangeByCorrect').name('Affect % Change (Correct)');
+      colorSwapAdjustmentFolder.add(settings, 'colorSwapAffectPercentageChangeByIncorrect').name('Affect % Change (Incorrect)');
+
+      const speedBurstFolder = gui.addFolder('Speed Burst Mode');
+      speedBurstFolder.add(settings, 'speedBurstMode').name('Enable Speed Burst');
+      speedBurstFolder.add(settings, 'speedBurstFrequencyMin').name('Frequency Min (ms)').min(500).step(100);
+      speedBurstFolder.add(settings, 'speedBurstFrequencyMax').name('Frequency Max (ms)').min(500).step(100);
+      speedBurstFolder.add(settings, 'speedBurstMultiplierMin').name('Multiplier Min').min(0.1).max(5.0).step(0.1);
+      speedBurstFolder.add(settings, 'speedBurstMultiplierMax').name('Multiplier Max').min(0.1).max(5.0).step(0.1);
+      speedBurstFolder.add(settings, 'speedBurstDuration').name('Duration (ms)').min(500).step(100);
+      speedBurstFolder.add(settings, 'speedBurstAffectTargetsOnly').name('Affect Targets Only');
+      speedBurstFolder.add(settings, 'speedBurstAffectPercentage').name('Affect Percentage').min(10).max(100).step(5);
+
+      const colorSwapFolder = gui.addFolder('Color Swap Mode');
+      colorSwapFolder.add(settings, 'colorSwapMode').name('Enable Color Swap');
+      colorSwapFolder.add(settings, 'colorSwapFrequencyMin').name('Frequency Min (ms)').min(1000).step(100);
+      colorSwapFolder.add(settings, 'colorSwapFrequencyMax').name('Frequency Max (ms)').min(1000).step(100);
+      colorSwapFolder.add(settings, 'colorSwapDuration').name('Duration (ms)').min(500).step(100);
+      colorSwapFolder.add(settings, 'colorSwapTargetBehavior', ['all', 'targetsOnly', 'distractorsOnly']).name('Target Behavior');
+      colorSwapFolder.add(settings, 'colorSwapAffectPercentage').name('Affect Percentage').min(10).max(100).step(5);
+      colorSwapFolder.add(settings, 'colorSwapVisualEffect').name('Visual Effect');
 
       const resetFolder = gui.addFolder('Settings Management');
       resetFolder.add(settings, 'exportSettings').name('Export Settings');
@@ -1301,6 +1368,9 @@
     }
 
     function clearGameObjects() {
+      clearSpeedBurstTimeouts();
+      clearColorSwapTimeouts();
+
       // Release all balls back to pool
       ballPool.releaseAll();
 
@@ -1696,6 +1766,9 @@
         // Assign random movement
         assignRandomMovement(balls);
       }
+
+      startSpeedBurstMode();
+      startColorSwapMode();
     }
 
     function assignRandomMovement(ballArray) {
@@ -2261,6 +2334,26 @@
         if (settings.delayAfterChangeByCorrect !== 0 && correctAnswersCount % settings.everyCorrectDelayAfter === 0) {
           settings.delayAfterSequence += settings.delayAfterChangeByCorrect;
         }
+
+        if (settings.speedBurstMode && correctAnswersCount % settings.everyCorrectSpeedBurst === 0) {
+          settings.speedBurstFrequencyMin += settings.speedBurstFrequencyChangeByCorrect;
+          settings.speedBurstFrequencyMax += settings.speedBurstFrequencyChangeByCorrect;
+          settings.speedBurstFrequencyMin = Math.max(500, settings.speedBurstFrequencyMin);
+          settings.speedBurstFrequencyMax = Math.max(500, settings.speedBurstFrequencyMax);
+
+          settings.speedBurstMultiplierMax += settings.speedBurstMultiplierChangeByCorrect;
+          settings.speedBurstMultiplierMax = Math.min(5.0, Math.max(0.1, settings.speedBurstMultiplierMax));
+        }
+
+        if (settings.colorSwapMode && correctAnswersCount % settings.everyCorrectColorSwap === 0) {
+          settings.colorSwapFrequencyMin += settings.colorSwapFrequencyChangeByCorrect;
+          settings.colorSwapFrequencyMax += settings.colorSwapFrequencyChangeByCorrect;
+          settings.colorSwapFrequencyMin = Math.max(1000, settings.colorSwapFrequencyMin);
+          settings.colorSwapFrequencyMax = Math.max(1000, settings.colorSwapFrequencyMax);
+
+          settings.colorSwapAffectPercentage += settings.colorSwapAffectPercentageChangeByCorrect;
+          settings.colorSwapAffectPercentage = Math.min(100, Math.max(10, settings.colorSwapAffectPercentage));
+        }
       } else {
         // Incorrect Answer Adjustments
         if (incorrectAnswersCount % settings.everyIncorrectLevel === 0) {
@@ -2278,6 +2371,26 @@
         if (settings.delayAfterChangeByIncorrect !== 0 && incorrectAnswersCount % settings.everyIncorrectDelayAfter === 0) {
           settings.delayAfterSequence += settings.delayAfterChangeByIncorrect;
           settings.delayAfterSequence = Math.max(0, settings.delayAfterSequence);
+        }
+
+        if (settings.speedBurstMode && incorrectAnswersCount % settings.everyIncorrectSpeedBurst === 0) {
+          settings.speedBurstFrequencyMin += settings.speedBurstFrequencyChangeByIncorrect;
+          settings.speedBurstFrequencyMax += settings.speedBurstFrequencyChangeByIncorrect;
+          settings.speedBurstFrequencyMin = Math.max(500, settings.speedBurstFrequencyMin);
+          settings.speedBurstFrequencyMax = Math.max(500, settings.speedBurstFrequencyMax);
+
+          settings.speedBurstMultiplierMax += settings.speedBurstMultiplierChangeByIncorrect;
+          settings.speedBurstMultiplierMax = Math.min(5.0, Math.max(0.1, settings.speedBurstMultiplierMax));
+        }
+
+        if (settings.colorSwapMode && incorrectAnswersCount % settings.everyIncorrectColorSwap === 0) {
+          settings.colorSwapFrequencyMin += settings.colorSwapFrequencyChangeByIncorrect;
+          settings.colorSwapFrequencyMax += settings.colorSwapFrequencyChangeByIncorrect;
+          settings.colorSwapFrequencyMin = Math.max(1000, settings.colorSwapFrequencyMin);
+          settings.colorSwapFrequencyMax = Math.max(1000, settings.colorSwapFrequencyMax);
+
+          settings.colorSwapAffectPercentage += settings.colorSwapAffectPercentageChangeByIncorrect;
+          settings.colorSwapAffectPercentage = Math.min(100, Math.max(10, settings.colorSwapAffectPercentage));
         }
       }
       repopulateGui();
@@ -2299,6 +2412,276 @@
         target.ball.material.emissiveIntensity = 0.5; // Strong glow
         addNumberLabel(target.ball, i + 1); // Add number label
       }
+    }
+
+    function startColorSwapMode() {
+      if (!settings.colorSwapMode) return;
+
+      balls.forEach(ball => {
+        ball.userData.initialColor = ball.userData.originalColor;
+      });
+
+      scheduleNextColorSwap();
+    }
+
+    function scheduleNextColorSwap() {
+      if (!settings.colorSwapMode || colorSwapScheduled) return;
+
+      const interval = getRandomInRange(settings.colorSwapFrequencyMin, settings.colorSwapFrequencyMax);
+      colorSwapScheduled = true;
+
+      const timeout = setTimeout(() => {
+        if (settings.colorSwapMode && !isUserTurn) {
+          triggerColorSwap();
+        }
+        colorSwapScheduled = false;
+        scheduleNextColorSwap();
+      }, interval);
+
+      colorSwapTimeouts.push(timeout);
+    }
+
+    function triggerColorSwap() {
+      let eligibleBalls = [];
+
+      if (settings.colorSwapTargetBehavior === 'all') {
+        eligibleBalls = balls;
+      } else if (settings.colorSwapTargetBehavior === 'targetsOnly') {
+        eligibleBalls = targetBalls;
+      } else if (settings.colorSwapTargetBehavior === 'distractorsOnly') {
+        eligibleBalls = [...distractorBalls, ...coloredDistractorBalls];
+      }
+
+      if (eligibleBalls.length === 0) return;
+
+      const numBallsToAffect = Math.ceil((eligibleBalls.length * settings.colorSwapAffectPercentage) / 100);
+      const shuffledBalls = shuffleArray([...eligibleBalls]);
+      const selectedBalls = shuffledBalls.slice(0, numBallsToAffect);
+
+      for (let i = 0; i < selectedBalls.length; i++) {
+        const ball = selectedBalls[i];
+        const targetColor = getRandomColor([ball.material.color.getHex()]);
+        applyColorSwap(ball, targetColor);
+      }
+    }
+
+    function applyColorSwap(ball, targetColor) {
+      if (ball.userData.isColorSwapping) return;
+
+      ball.userData.isColorSwapping = true;
+      ball.userData.swapStartColor = ball.material.color.getHex();
+      ball.userData.targetColor = targetColor;
+      ball.userData.colorSwapStartTime = Date.now();
+      ball.userData.colorSwapProgress = 0;
+
+      activeColorSwaps.push({
+        ball: ball,
+        startColor: ball.userData.swapStartColor,
+        targetColor: targetColor,
+        startTime: Date.now(),
+        duration: settings.colorSwapDuration
+      });
+
+      if (settings.colorSwapVisualEffect) {
+        createColorSwapEffect(ball);
+      }
+    }
+
+    function updateColorSwaps() {
+      const now = Date.now();
+
+      for (let i = activeColorSwaps.length - 1; i >= 0; i--) {
+        const swap = activeColorSwaps[i];
+        const elapsed = now - swap.startTime;
+        const progress = Math.min(elapsed / swap.duration, 1.0);
+
+        const easedProgress = progress < 0.5
+          ? 2 * progress * progress
+          : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+
+        const startColor = new THREE.Color(swap.startColor);
+        const targetColor = new THREE.Color(swap.targetColor);
+        const currentColor = startColor.lerp(targetColor, easedProgress);
+
+        swap.ball.material.color.copy(currentColor);
+        swap.ball.userData.colorSwapProgress = progress;
+
+        if (progress >= 1.0) {
+          swap.ball.userData.isColorSwapping = false;
+          swap.ball.userData.originalColor = swap.targetColor;
+          activeColorSwaps.splice(i, 1);
+        }
+      }
+    }
+
+    function createColorSwapEffect(ball) {
+      const flashMaterial = new THREE.MeshBasicMaterial({
+        color: 0xFFFFFF,
+        transparent: true,
+        opacity: 0.8
+      });
+      const flashSphere = new THREE.Mesh(
+        new THREE.SphereGeometry(1.7, 16, 16),
+        flashMaterial
+      );
+      flashSphere.position.copy(ball.position);
+      scene.add(flashSphere);
+
+      const ringGeometry = new THREE.RingGeometry(1.5, 1.8, 16);
+      const ringMaterial = new THREE.MeshBasicMaterial({
+        color: 0xFFFFFF,
+        side: THREE.DoubleSide,
+        transparent: true,
+        opacity: 1.0
+      });
+      const ring = new THREE.Mesh(ringGeometry, ringMaterial);
+      ring.position.copy(ball.position);
+      ring.lookAt(camera.position);
+      scene.add(ring);
+
+      const startTime = Date.now();
+      const duration = 300;
+
+      function animateEffect() {
+        const elapsed = Date.now() - startTime;
+        const progress = elapsed / duration;
+
+        if (progress < 1.0) {
+          flashMaterial.opacity = 0.8 * (1 - progress);
+          flashSphere.scale.setScalar(1 + progress * 0.3);
+
+          ringMaterial.opacity = 1.0 * (1 - progress);
+          ring.scale.setScalar(1 + progress * 2);
+
+          requestAnimationFrame(animateEffect);
+        } else {
+          scene.remove(flashSphere);
+          scene.remove(ring);
+          flashSphere.geometry.dispose();
+          flashMaterial.dispose();
+          ring.geometry.dispose();
+          ringMaterial.dispose();
+        }
+      }
+
+      animateEffect();
+    }
+
+    function clearColorSwapTimeouts() {
+      colorSwapTimeouts.forEach(timeout => clearTimeout(timeout));
+      colorSwapTimeouts = [];
+      colorSwapScheduled = false;
+      activeColorSwaps = [];
+
+      balls.forEach(ball => {
+        ball.userData.isColorSwapping = false;
+        if (ball.userData.initialColor !== null) {
+          ball.material.color.set(ball.userData.initialColor);
+          ball.userData.originalColor = ball.userData.initialColor;
+        }
+      });
+    }
+
+    function startSpeedBurstMode() {
+      if (!settings.speedBurstMode) return;
+      scheduleNextSpeedBurst();
+    }
+
+    function scheduleNextSpeedBurst() {
+      if (!settings.speedBurstMode || speedBurstScheduled) return;
+
+      const interval = getRandomInRange(settings.speedBurstFrequencyMin, settings.speedBurstFrequencyMax);
+      speedBurstScheduled = true;
+
+      const timeout = setTimeout(() => {
+        if (settings.speedBurstMode && !isUserTurn) {
+          triggerSpeedBurst();
+        }
+        speedBurstScheduled = false;
+        scheduleNextSpeedBurst();
+      }, interval);
+
+      speedBurstTimeouts.push(timeout);
+    }
+
+    function triggerSpeedBurst() {
+      let eligibleBalls = settings.speedBurstAffectTargetsOnly ? targetBalls : balls;
+
+      if (eligibleBalls.length === 0) return;
+
+      const numBallsToAffect = Math.ceil((eligibleBalls.length * settings.speedBurstAffectPercentage) / 100);
+      const shuffledBalls = shuffleArray([...eligibleBalls]);
+      const selectedBalls = shuffledBalls.slice(0, numBallsToAffect);
+
+      selectedBalls.forEach(ball => {
+        const multiplier = getRandomInRange(settings.speedBurstMultiplierMin, settings.speedBurstMultiplierMax);
+        applySpeedBurst(ball, multiplier, settings.speedBurstDuration);
+      });
+    }
+
+    function applySpeedBurst(ball, multiplier, duration) {
+      if (!ball.userData.baseSpeed) {
+        if (ball.userData.isRotating) {
+          ball.userData.baseSpeed = ball.userData.rotationSpeed;
+        } else {
+          ball.userData.baseSpeed = ball.userData.velocity.length();
+        }
+      }
+
+      ball.userData.currentSpeedMultiplier = multiplier;
+      ball.userData.isSpeedBursting = true;
+      ball.userData.speedBurstEndTime = Date.now() + duration;
+
+      if (multiplier > 1.0) {
+        ball.material.emissive.set(0x0088FF);
+        ball.material.emissiveIntensity = 0.3;
+      } else {
+        ball.material.emissive.set(0x8800FF);
+        ball.material.emissiveIntensity = 0.3;
+      }
+
+      if (ball.userData.isRotating) {
+        ball.userData.rotationSpeed = ball.userData.baseSpeed * multiplier;
+      } else {
+        const direction = ball.userData.velocity.clone().normalize();
+        ball.userData.velocity.copy(direction.multiplyScalar(ball.userData.baseSpeed * multiplier * settings.ballSpeed / 0.1));
+      }
+
+      const timeout = setTimeout(() => resetSpeedBurst(ball), duration);
+      speedBurstTimeouts.push(timeout);
+    }
+
+    function resetSpeedBurst(ball) {
+      if (!ball.userData.isSpeedBursting) return;
+
+      ball.userData.currentSpeedMultiplier = 1.0;
+      ball.userData.isSpeedBursting = false;
+
+      if (!ball.userData.isCurrentlyHighlighted && !ball.userData.isFlashing) {
+        ball.material.emissive.set(0xFFFFFF);
+        ball.material.emissiveIntensity = 0.05;
+      }
+
+      if (ball.userData.baseSpeed) {
+        if (ball.userData.isRotating) {
+          ball.userData.rotationSpeed = ball.userData.baseSpeed;
+        } else {
+          const direction = ball.userData.velocity.clone().normalize();
+          ball.userData.velocity.copy(direction.multiplyScalar(ball.userData.baseSpeed * settings.ballSpeed / 0.1));
+        }
+      }
+    }
+
+    function clearSpeedBurstTimeouts() {
+      speedBurstTimeouts.forEach(timeout => clearTimeout(timeout));
+      speedBurstTimeouts = [];
+      speedBurstScheduled = false;
+
+      balls.forEach(ball => {
+        if (ball.userData.isSpeedBursting) {
+          resetSpeedBurst(ball);
+        }
+      });
     }
 
     function onWindowResize() {
@@ -2324,6 +2707,8 @@
       if (!isUserTurn) {
         updateBallPositions(delta);
       }
+
+      updateColorSwaps();
 
       // Screen Rotation with delta time
       if (settings.screenRotation) {
