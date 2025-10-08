@@ -3,6 +3,7 @@
 
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Jiggle Factorial 3D</title>
   <style>
     body {
@@ -121,6 +122,105 @@
     .disabled {
       pointer-events: none;
       opacity: 0.5;
+    }
+
+    /* Mobile-first responsive design */
+    @media (max-width: 768px) {
+      #message {
+        font-size: clamp(32px, 8vw, 72px);
+        top: 10px;
+        left: 10px;
+      }
+
+      #instructions {
+        font-size: 14px;
+        bottom: 70px;
+        right: 10px;
+        left: 10px;
+        text-align: center;
+      }
+
+      #average-display {
+        font-size: 16px;
+        bottom: 40px;
+        left: 10px;
+        flex-direction: column;
+        align-items: flex-start;
+      }
+
+      #average-display button {
+        margin-left: 0;
+        margin-top: 5px;
+        padding: 10px 15px;
+        font-size: 14px;
+        min-height: 44px;
+        min-width: 44px;
+      }
+
+      .dg.main {
+        position: fixed !important;
+        bottom: 0 !important;
+        right: 0 !important;
+        left: 0 !important;
+        top: auto !important;
+        width: 100% !important;
+        max-height: 40vh;
+        overflow-y: auto;
+      }
+
+      .dg.main .close-button {
+        min-width: 44px;
+        min-height: 44px;
+      }
+
+      /* Safe area for notched devices */
+      #gui-container {
+        padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+      }
+
+      #center-dot {
+        width: 10px !important;
+        height: 10px !important;
+      }
+
+      #graph-popup {
+        top: 5%;
+        left: 5%;
+        width: 90%;
+        height: 90%;
+      }
+
+      #close-graph-button {
+        min-width: 44px;
+        min-height: 44px;
+        padding: 10px 15px;
+      }
+    }
+
+    /* Landscape mobile */
+    @media (max-width: 768px) and (orientation: landscape) {
+      #message {
+        font-size: clamp(24px, 5vw, 48px);
+      }
+
+      .dg.main {
+        max-height: 50vh;
+      }
+    }
+
+    /* Small mobile devices */
+    @media (max-width: 375px) {
+      #message {
+        font-size: clamp(24px, 6vw, 48px);
+      }
+
+      #instructions {
+        font-size: 12px;
+      }
+
+      #average-display {
+        font-size: 14px;
+      }
     }
   </style>
 </head>
@@ -389,6 +489,49 @@
     const isMobile = /Android|webOS|iPhone|iPad|iPod/i.test(navigator.userAgent);
     const isLowEnd = navigator.hardwareConcurrency <= 4 || isMobile;
 
+    // Performance monitoring
+    let fpsHistory = [];
+    let lastFrameTime = performance.now();
+
+    // Performance presets
+    const performancePresets = {
+      low: {
+        shadowMapSize: 512,
+        sphereSegments: 16,
+        antialias: false,
+        maxBalls: 10,
+        enableScreenRotation: false,
+        enableFlashMode: false
+      },
+      medium: {
+        shadowMapSize: 1024,
+        sphereSegments: 24,
+        antialias: true,
+        maxBalls: 15,
+        enableScreenRotation: false,
+        enableFlashMode: false
+      },
+      high: {
+        shadowMapSize: 2048,
+        sphereSegments: 32,
+        antialias: true,
+        maxBalls: 30,
+        enableScreenRotation: true,
+        enableFlashMode: true
+      }
+    };
+
+    function detectPerformanceLevel() {
+      if (isMobile && isLowEnd) return 'low';
+      if (isMobile) return 'medium';
+      return 'high';
+    }
+
+    let currentPerformancePreset = detectPerformanceLevel();
+
+    // Log performance level
+    console.log('Detected device:', isMobile ? 'Mobile' : 'Desktop', '| Performance level:', currentPerformancePreset);
+
     init();
     animate();
 
@@ -631,6 +774,9 @@
       window.addEventListener('resize', onWindowResize, false);
       renderer.domElement.addEventListener('pointerdown', onDocumentMouseDown, false);
 
+      // Touch gesture handlers for mobile
+      setupTouchControls();
+
       gui.__controllers.forEach(controller => {
         controller.onChange((value) => {
           updateSettings();
@@ -681,6 +827,12 @@
 
       // Initialize the center dot
       updateCenterDot();
+
+      // Update instructions for mobile
+      const instructionsElement = document.getElementById('instructions');
+      if (isMobile) {
+        instructionsElement.textContent = 'Tap to select | Pinch to zoom | Two fingers to rotate';
+      }
     }
 
     function updateCenterDot() {
@@ -1594,6 +1746,26 @@
 
       const delta = clock.getDelta();
 
+      // Performance monitoring on mobile
+      if (isMobile) {
+        const currentTime = performance.now();
+        const fps = 1000 / (currentTime - lastFrameTime);
+        lastFrameTime = currentTime;
+
+        fpsHistory.push(fps);
+        if (fpsHistory.length > 60) {
+          fpsHistory.shift();
+        }
+
+        // Log average FPS every 60 frames
+        if (fpsHistory.length === 60) {
+          const avgFps = fpsHistory.reduce((a, b) => a + b, 0) / 60;
+          if (avgFps < 25) {
+            console.warn('Low FPS detected:', avgFps.toFixed(1), '| Consider reducing quality settings');
+          }
+        }
+      }
+
       // Optimized: Make only LABELS look at camera, not entire balls
       balls.forEach(ball => {
         if (ball.userData.label && ball.userData.label.visible) {
@@ -1778,6 +1950,71 @@
           ball.userData.isFlashing = false;
         }
       });
+    }
+
+    // Touch Controls for Mobile
+    let touchState = {
+      touches: [],
+      initialDistance: 0,
+      initialCameraDistance: 0,
+      lastTouches: []
+    };
+
+    function setupTouchControls() {
+      // Add touch event listeners
+      renderer.domElement.addEventListener('touchstart', onTouchStart, { passive: false });
+      renderer.domElement.addEventListener('touchmove', onTouchMove, { passive: false });
+      renderer.domElement.addEventListener('touchend', onTouchEnd, { passive: false });
+    }
+
+    function getTouchDistance(touches) {
+      const dx = touches[0].clientX - touches[1].clientX;
+      const dy = touches[0].clientY - touches[1].clientY;
+      return Math.sqrt(dx * dx + dy * dy);
+    }
+
+    function onTouchStart(event) {
+      touchState.touches = Array.from(event.touches);
+
+      if (event.touches.length === 1 && isUserTurn) {
+        // Single tap for ball selection - use existing mouse handler
+        event.preventDefault();
+        // Don't handle here, pointerdown will handle it
+      } else if (event.touches.length === 2) {
+        // Initialize pinch/rotate gesture
+        event.preventDefault();
+        touchState.initialDistance = getTouchDistance(event.touches);
+        touchState.initialCameraDistance = camera.position.length();
+        touchState.lastTouches = Array.from(event.touches);
+      }
+    }
+
+    function onTouchMove(event) {
+      if (event.touches.length === 2) {
+        event.preventDefault();
+
+        // Handle pinch zoom
+        const currentDistance = getTouchDistance(event.touches);
+        const scale = currentDistance / touchState.initialDistance;
+        const newDistance = THREE.MathUtils.clamp(
+          touchState.initialCameraDistance / scale,
+          20, // min distance
+          150  // max distance
+        );
+
+        // Update camera distance
+        const direction = camera.position.clone().normalize();
+        camera.position.copy(direction.multiplyScalar(newDistance));
+
+        touchState.lastTouches = Array.from(event.touches);
+      }
+    }
+
+    function onTouchEnd(event) {
+      if (event.touches.length < 2) {
+        touchState.initialDistance = 0;
+      }
+      touchState.touches = Array.from(event.touches);
     }
 
     // Utility Functions
