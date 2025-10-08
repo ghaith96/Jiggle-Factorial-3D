@@ -1,0 +1,136 @@
+/**
+ * Touch Controls for Mobile Devices
+ */
+
+import * as THREE from 'three';
+import { vibrateDevice } from './utils.js';
+
+/**
+ * TouchControls - Manages touch input for mobile devices
+ */
+export class TouchControls {
+  constructor(camera, controls, renderer) {
+    this.camera = camera;
+    this.controls = controls;
+    this.renderer = renderer;
+    
+    this.touchState = {
+      touches: [],
+      initialDistance: 0,
+      initialCameraDistance: 0,
+      lastTouches: [],
+      lastTapTime: 0
+    };
+    
+    this.isUserTurnCallback = null;
+  }
+
+  /**
+   * Set the callback to check if it's user's turn
+   * @param {Function} callback - Function that returns boolean
+   */
+  setIsUserTurnCallback(callback) {
+    this.isUserTurnCallback = callback;
+  }
+
+  /**
+   * Setup touch event listeners
+   */
+  setup() {
+    this.renderer.domElement.addEventListener('touchstart', this.onTouchStart.bind(this), { passive: false });
+    this.renderer.domElement.addEventListener('touchmove', this.onTouchMove.bind(this), { passive: false });
+    this.renderer.domElement.addEventListener('touchend', this.onTouchEnd.bind(this), { passive: false });
+  }
+
+  /**
+   * Calculate distance between two touches
+   * @param {TouchList} touches - Touch list
+   * @returns {number} Distance between touches
+   */
+  getTouchDistance(touches) {
+    const dx = touches[0].clientX - touches[1].clientX;
+    const dy = touches[0].clientY - touches[1].clientY;
+    return Math.sqrt(dx * dx + dy * dy);
+  }
+
+  /**
+   * Handle touch start event
+   * @param {TouchEvent} event - Touch event
+   */
+  onTouchStart(event) {
+    this.touchState.touches = Array.from(event.touches);
+
+    if (event.touches.length === 1) {
+      // Check for double-tap to reset camera
+      const currentTime = Date.now();
+      const tapGap = currentTime - this.touchState.lastTapTime;
+      
+      const isUserTurn = this.isUserTurnCallback ? this.isUserTurnCallback() : false;
+      
+      if (tapGap < 300 && tapGap > 0 && !isUserTurn) {
+        // Double tap detected (only when not selecting balls)
+        event.preventDefault();
+        this.resetCamera();
+        vibrateDevice(50); // Short vibration for camera reset
+      } else if (isUserTurn) {
+        // Single tap for ball selection - use existing mouse handler
+        event.preventDefault();
+        // Don't handle here, pointerdown will handle it
+      }
+      
+      this.touchState.lastTapTime = currentTime;
+    } else if (event.touches.length === 2) {
+      // Initialize pinch/rotate gesture
+      event.preventDefault();
+      this.touchState.initialDistance = this.getTouchDistance(event.touches);
+      this.touchState.initialCameraDistance = this.camera.position.length();
+      this.touchState.lastTouches = Array.from(event.touches);
+    }
+  }
+
+  /**
+   * Handle touch move event
+   * @param {TouchEvent} event - Touch event
+   */
+  onTouchMove(event) {
+    if (event.touches.length === 2) {
+      event.preventDefault();
+
+      // Handle pinch zoom
+      const currentDistance = this.getTouchDistance(event.touches);
+      const scale = currentDistance / this.touchState.initialDistance;
+      const newDistance = THREE.MathUtils.clamp(
+        this.touchState.initialCameraDistance / scale,
+        20, // min distance
+        150  // max distance
+      );
+
+      // Update camera distance
+      const direction = this.camera.position.clone().normalize();
+      this.camera.position.copy(direction.multiplyScalar(newDistance));
+
+      this.touchState.lastTouches = Array.from(event.touches);
+    }
+  }
+
+  /**
+   * Handle touch end event
+   * @param {TouchEvent} event - Touch event
+   */
+  onTouchEnd(event) {
+    if (event.touches.length < 2) {
+      this.touchState.initialDistance = 0;
+    }
+    this.touchState.touches = Array.from(event.touches);
+  }
+
+  /**
+   * Reset camera to default position
+   */
+  resetCamera() {
+    this.camera.position.set(0, 0, 60);
+    this.camera.lookAt(new THREE.Vector3(0, 0, 0));
+    this.controls.update();
+  }
+}
+

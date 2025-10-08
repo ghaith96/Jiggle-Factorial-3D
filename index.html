@@ -247,6 +247,43 @@
       <button id="close-graph-button">X</button>
     </div>
   </div>
+  <!-- Loading Indicator -->
+  <div id="loading-indicator" style="
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(0, 0, 0, 0.8);
+    color: white;
+    padding: 20px 40px;
+    border-radius: 10px;
+    font-family: Arial, sans-serif;
+    font-size: 18px;
+    z-index: 1000;
+    display: none;
+  ">
+    <div>Loading...</div>
+    <div style="width: 200px; height: 4px; background: rgba(255,255,255,0.3); margin-top: 10px; border-radius: 2px;">
+      <div id="loading-progress"
+        style="width: 0%; height: 100%; background: #4CAF50; border-radius: 2px; transition: width 0.3s;"></div>
+    </div>
+  </div>
+  <!-- Fullscreen Button -->
+  <button id="fullscreen-button" style="
+    position: fixed;
+    bottom: 10px;
+    right: 10px;
+    background: rgba(0, 0, 0, 0.6);
+    color: white;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 5px;
+    padding: 10px 15px;
+    font-size: 14px;
+    cursor: pointer;
+    z-index: 1;
+    min-width: 44px;
+    min-height: 44px;
+  ">⛶</button>
   <!-- Include Three.js and dat.GUI -->
   <script type="importmap">
     {
@@ -264,6 +301,22 @@
     import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
     import { FontLoader } from 'three/addons/loaders/FontLoader.js';
     import { TextGeometry } from 'three/addons/geometries/TextGeometry.js';
+
+    // Import our custom modules
+    import {
+      shuffleArray,
+      generateNonConsecutiveNumbers,
+      showLoading,
+      hideLoading,
+      vibrateDevice,
+      toggleFullscreen,
+      isMobileDevice,
+      isLowEndDevice,
+      detectPerformanceLevel,
+      performancePresets
+    } from './js/utils.js';
+    import { BallPool, LabelPool } from './js/object-pools.js';
+    import { TouchControls } from './js/touch-controls.js';
 
     // Make THREE globally available for debugging
     window.THREE = THREE;
@@ -313,7 +366,9 @@
     const graphPopup = document.getElementById('graph-popup');
     const closeGraphButton = document.getElementById('close-graph-button');
 
-    // Object Pooling Classes
+    // Object Pooling Classes (now imported from js/object-pools.js)
+    // Keeping these here temporarily for reference, but using imported classes
+    /*
     class BallPool {
       constructor() {
         this.pool = [];
@@ -477,56 +532,25 @@
         this.active = [];
       }
     }
+    */
 
-    // Initialize pools
+    // Initialize pools (using imported classes)
     let ballPool = null;
     let labelPool = null;
+    let touchControls = null;
 
     // Clock for delta time
     const clock = new THREE.Clock();
 
-    // Device detection for memory optimization
-    const isMobile = /Android|webOS|iPhone|iPad|iPod/i.test(navigator.userAgent);
-    const isLowEnd = navigator.hardwareConcurrency <= 4 || isMobile;
+    // Device detection for memory optimization (using imported utils)
+    const isMobile = isMobileDevice();
+    const isLowEnd = isLowEndDevice();
 
     // Performance monitoring
     let fpsHistory = [];
     let lastFrameTime = performance.now();
 
-    // Performance presets
-    const performancePresets = {
-      low: {
-        shadowMapSize: 512,
-        sphereSegments: 16,
-        antialias: false,
-        maxBalls: 10,
-        enableScreenRotation: false,
-        enableFlashMode: false
-      },
-      medium: {
-        shadowMapSize: 1024,
-        sphereSegments: 24,
-        antialias: true,
-        maxBalls: 15,
-        enableScreenRotation: false,
-        enableFlashMode: false
-      },
-      high: {
-        shadowMapSize: 2048,
-        sphereSegments: 32,
-        antialias: true,
-        maxBalls: 30,
-        enableScreenRotation: true,
-        enableFlashMode: true
-      }
-    };
-
-    function detectPerformanceLevel() {
-      if (isMobile && isLowEnd) return 'low';
-      if (isMobile) return 'medium';
-      return 'high';
-    }
-
+    // Performance presets (imported from utils.js)
     let currentPerformancePreset = detectPerformanceLevel();
 
     // Log performance level
@@ -774,8 +798,16 @@
       window.addEventListener('resize', onWindowResize, false);
       renderer.domElement.addEventListener('pointerdown', onDocumentMouseDown, false);
 
-      // Touch gesture handlers for mobile
-      setupTouchControls();
+      // Touch gesture handlers for mobile (using TouchControls class)
+      touchControls = new TouchControls(camera, controls, renderer);
+      touchControls.setIsUserTurnCallback(() => isUserTurn);
+      touchControls.setup();
+
+      // Add fullscreen button listener
+      const fullscreenButton = document.getElementById('fullscreen-button');
+      if (fullscreenButton) {
+        fullscreenButton.addEventListener('click', toggleFullscreen);
+      }
 
       gui.__controllers.forEach(controller => {
         controller.onChange((value) => {
@@ -798,32 +830,55 @@
         graphPopup.style.display = 'none';
       });
 
-      // Load the font once
+      // Load the font once with loading indicator
+      showLoading(0);
       const fontLoader = new FontLoader();
-      fontLoader.load('https://threejs.org/examples/fonts/helvetiker_regular.typeface.json', function (font) {
-        loadedFont = font;
+      fontLoader.load('https://threejs.org/examples/fonts/helvetiker_regular.typeface.json',
+        function (font) {
+          loadedFont = font;
 
-        // Initialize object pools after font is loaded
-        ballPool = new BallPool();
-        labelPool = new LabelPool();
+          // Initialize object pools after font is loaded
+          showLoading(70);
+          ballPool = new BallPool(scene);
+          labelPool = new LabelPool();
+          labelPool.setFont(font);
+          labelPool.setSettings(settings);
+          ballPool.setLabelPool(labelPool);
 
-        // Pre-allocate balls based on max possible (adjust as needed)
-        const maxBalls = 50; // Max level + max distractors
-        ballPool.initialize(maxBalls);
+          // Pre-allocate balls based on max possible (adjust as needed)
+          const maxBalls = 50; // Max level + max distractors
+          ballPool.initialize(maxBalls);
 
-        // Start the game after the font has loaded and pools initialized
-        startGame();
-      }, undefined, function (err) {
-        console.error('An error happened loading the font:', err);
+          showLoading(100);
+          // Hide loading indicator after a brief delay for smooth transition
+          setTimeout(() => {
+            hideLoading();
+            // Start the game after the font has loaded and pools initialized
+            startGame();
+          }, 200);
+        },
+        function (xhr) {
+          // Progress callback
+          if (xhr.lengthComputable) {
+            const progress = (xhr.loaded / xhr.total) * 70; // 0-70%
+            showLoading(progress);
+          }
+        },
+        function (err) {
+          console.error('An error happened loading the font:', err);
 
-        // Initialize pools even if font fails
-        ballPool = new BallPool();
-        labelPool = new LabelPool();
-        ballPool.initialize(50);
+          // Initialize pools even if font fails
+          ballPool = new BallPool(scene);
+          labelPool = new LabelPool();
+          labelPool.setSettings(settings);
+          ballPool.setLabelPool(labelPool);
+          ballPool.initialize(50);
 
-        // Proceed to start the game even if font loading fails
-        startGame();
-      });
+          hideLoading();
+          // Proceed to start the game even if font loading fails
+          startGame();
+        }
+      );
 
       // Initialize the center dot
       updateCenterDot();
@@ -1337,6 +1392,7 @@
           if (parentBall === targetSequence[userSequence.length - 1].ball && !mistakeMade) {
             // Correct selection
             parentBall.material.color.set(0xffff00); // Turn yellow
+            vibrateDevice(50); // Short vibration for correct selection
           } else {
             // Wrong sequence but correct target ball
             if (settings.isRegular3DMOT) {
@@ -1346,11 +1402,13 @@
             }
 
             mistakeMade = true;
+            vibrateDevice([50, 50, 50]); // Pattern for wrong order
           }
         } else {
           // Player selected a distractor ball
           parentBall.material.color.set(0xff0000); // Turn red
           mistakeMade = true;
+          vibrateDevice(200); // Long vibration for wrong ball
         }
 
         // Check if the player has selected enough balls
@@ -1952,90 +2010,32 @@
       });
     }
 
-    // Touch Controls for Mobile
-    let touchState = {
-      touches: [],
-      initialDistance: 0,
-      initialCameraDistance: 0,
-      lastTouches: []
-    };
+    // Touch Controls for Mobile (now using TouchControls class from js/touch-controls.js)
+    // Old code commented out - now using imported modules
+    /*
+    let touchState = {...};
+    function setupTouchControls() {...}
+    function getTouchDistance(touches) {...}
+    function onTouchStart(event) {...}
+    function onTouchMove(event) {...}
+    function onTouchEnd(event) {...}
+    */
 
-    function setupTouchControls() {
-      // Add touch event listeners
-      renderer.domElement.addEventListener('touchstart', onTouchStart, { passive: false });
-      renderer.domElement.addEventListener('touchmove', onTouchMove, { passive: false });
-      renderer.domElement.addEventListener('touchend', onTouchEnd, { passive: false });
-    }
+    // Utility functions (now imported from js/utils.js)
+    // Old code commented out - now using imported modules  
+    /*
+    function showLoading(progress) {...}
+    function hideLoading() {...}
+    function vibrateDevice(pattern) {...}
+    function resetCamera() {...}
+    function toggleFullscreen() {...}
+    */
 
-    function getTouchDistance(touches) {
-      const dx = touches[0].clientX - touches[1].clientX;
-      const dy = touches[0].clientY - touches[1].clientY;
-      return Math.sqrt(dx * dx + dy * dy);
-    }
-
-    function onTouchStart(event) {
-      touchState.touches = Array.from(event.touches);
-
-      if (event.touches.length === 1 && isUserTurn) {
-        // Single tap for ball selection - use existing mouse handler
-        event.preventDefault();
-        // Don't handle here, pointerdown will handle it
-      } else if (event.touches.length === 2) {
-        // Initialize pinch/rotate gesture
-        event.preventDefault();
-        touchState.initialDistance = getTouchDistance(event.touches);
-        touchState.initialCameraDistance = camera.position.length();
-        touchState.lastTouches = Array.from(event.touches);
-      }
-    }
-
-    function onTouchMove(event) {
-      if (event.touches.length === 2) {
-        event.preventDefault();
-
-        // Handle pinch zoom
-        const currentDistance = getTouchDistance(event.touches);
-        const scale = currentDistance / touchState.initialDistance;
-        const newDistance = THREE.MathUtils.clamp(
-          touchState.initialCameraDistance / scale,
-          20, // min distance
-          150  // max distance
-        );
-
-        // Update camera distance
-        const direction = camera.position.clone().normalize();
-        camera.position.copy(direction.multiplyScalar(newDistance));
-
-        touchState.lastTouches = Array.from(event.touches);
-      }
-    }
-
-    function onTouchEnd(event) {
-      if (event.touches.length < 2) {
-        touchState.initialDistance = 0;
-      }
-      touchState.touches = Array.from(event.touches);
-    }
-
-    // Utility Functions
-    function shuffleArray(array) {
-      for (let i = array.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [array[i], array[j]] = [array[j], array[i]];
-      }
-      return array;
-    }
-
-    function generateNonConsecutiveNumbers(count) {
-      const numbers = [];
-      while (numbers.length < count) {
-        const num = Math.floor(Math.random() * 100) + 1;
-        if (!numbers.includes(num)) {
-          numbers.push(num);
-        }
-      }
-      return numbers;
-    }
+    // Utility Functions (now imported from js/utils.js)
+    /*
+    function shuffleArray(array) {...}
+    function generateNonConsecutiveNumbers(count) {...}
+    */
 
     function getRandomColor(excludeColors) {
       let color;
