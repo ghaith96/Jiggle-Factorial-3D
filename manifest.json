@@ -1,0 +1,66 @@
+{
+    "name": "Jiggle Factorial 3D",
+    "short_name": "Jiggle 3D",
+    "description": "A cognitive training game using 3D multiple object tracking",
+    "start_url": "/",
+    "display": "standalone",
+    "orientation": "landscape",
+    "background_color": "#1a1a1a",
+    "theme_color": "#667eea",
+    "icons": [
+        {
+            "src": "icon-192.png",
+            "sizes": "192x192",
+            "type": "image/png",
+            "purpose": "any maskable"
+        },
+        {
+            "src": "icon-512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "any maskable"
+        }
+    ],
+    "categories": [
+        "games",
+        "education"
+    ],
+    "shortcuts": [
+        {
+            "name": "Start Easy",
+            "short_name": "Easy",
+            "description": "Start at level 2",
+            "url": "/?level=2",
+            "icons": [
+                {
+                    "src": "icon-192.png",
+                    "sizes": "192x192"
+                }
+            ]
+        },
+        {
+            "name": "Start Medium",
+            "short_name": "Medium",
+            "description": "Start at level 5",
+            "url": "/?level=5",
+            "icons": [
+                {
+                    "src": "icon-192.png",
+                    "sizes": "192x192"
+                }
+            ]
+        },
+        {
+            "name": "Start Hard",
+            "short_name": "Hard",
+            "description": "Start at level 8",
+            "url": "/?level=8",
+            "icons": [
+                {
+                    "src": "icon-192.png",
+                    "sizes": "192x192"
+                }
+            ]
+        }
+    ]
+}

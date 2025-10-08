@@ -5,6 +5,17 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Jiggle Factorial 3D</title>
+
+  <!-- PWA Meta Tags -->
+  <meta name="description" content="A cognitive training game using 3D multiple object tracking">
+  <meta name="theme-color" content="#667eea">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Jiggle 3D">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
+  <link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png">
+  <link rel="apple-touch-icon" href="/icon-192.png">
   <style>
     body {
       margin: 0;
@@ -239,6 +250,7 @@
   <div id="average-display">
     Avg Score: N/A | Avg Accuracy: N/A%
     <button id="show-graph-button">Show Progress Graph</button>
+    <button id="export-data-button">Export CSV</button>
   </div>
   <!-- Popup for Graph -->
   <div id="graph-popup">
@@ -317,6 +329,17 @@
     } from './js/utils.js';
     import { BallPool, LabelPool } from './js/object-pools.js';
     import { TouchControls } from './js/touch-controls.js';
+    import {
+      storage,
+      saveGameSettings,
+      loadGameSettings,
+      saveProgress,
+      loadProgress,
+      saveTrial,
+      getAllTrials,
+      exportToCSV,
+      downloadCSV
+    } from './js/storage.js';
 
     // Make THREE globally available for debugging
     window.THREE = THREE;
@@ -1560,9 +1583,9 @@
       averageDisplayElement.firstChild.textContent = `Avg Score: ${averageScore.toFixed(2)} | Avg Accuracy: ${averageAccuracy.toFixed(2)}%`;
     }
 
-    function saveDailyProgress(trialScore) {
+    async function saveDailyProgress(trialScore) {
       const today = new Date().toISOString().split('T')[0];
-      const progressData = JSON.parse(localStorage.getItem('progressData')) || [];
+      const progressData = await storage.get('progressData') || [];
 
       // Calculate average score and accuracy
       const totalScore = trialScores.reduce((a, b) => a + b, 0);
@@ -1638,15 +1661,15 @@
 
       }
 
-      // Save back to localStorage
-      localStorage.setItem('progressData', JSON.stringify(progressData));
+      // Save to IndexedDB
+      await storage.save('progressData', progressData);
     }
 
-    function renderProgressChart() {
+    async function renderProgressChart() {
       const ctx = document.getElementById('progress-chart').getContext('2d');
 
-      // Retrieve data from localStorage
-      const progressData = JSON.parse(localStorage.getItem('progressData')) || [];
+      // Retrieve data from IndexedDB
+      const progressData = await storage.get('progressData') || [];
 
       const labels = progressData.map(data => data.date);
       const scores = progressData.map(data => data.averageScore);
@@ -2048,6 +2071,305 @@
     function getRandomInRange(min, max) {
       return Math.random() * (max - min) + min;
     }
+
+    // ============================================
+    // PWA: Service Worker Registration & Install Prompt
+    // ============================================
+
+    let deferredPrompt;
+    let installButton;
+
+    // Register service worker
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/service-worker.js')
+          .then((registration) => {
+            console.log('[PWA] Service Worker registered:', registration);
+
+            // Check for updates
+            registration.addEventListener('updatefound', () => {
+              const newWorker = registration.installing;
+              newWorker.addEventListener('statechange', () => {
+                if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                  // New service worker available
+                  console.log('[PWA] New version available! Please refresh.');
+                  showUpdateNotification();
+                }
+              });
+            });
+          })
+          .catch((error) => {
+            console.error('[PWA] Service Worker registration failed:', error);
+          });
+      });
+    }
+
+    // Show update notification
+    function showUpdateNotification() {
+      const notification = document.createElement('div');
+      notification.id = 'update-notification';
+      notification.style.cssText = `
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        background: rgba(102, 126, 234, 0.95);
+        color: white;
+        padding: 15px 20px;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        z-index: 10000;
+        font-family: Arial, sans-serif;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      `;
+      notification.innerHTML = `
+        <span>New version available!</span>
+        <button onclick="window.location.reload()" style="
+          background: white;
+          color: #667eea;
+          border: none;
+          padding: 5px 15px;
+          border-radius: 4px;
+          cursor: pointer;
+          font-weight: bold;
+        ">Update</button>
+        <button onclick="this.parentElement.remove()" style="
+          background: transparent;
+          color: white;
+          border: 1px solid white;
+          padding: 5px 15px;
+          border-radius: 4px;
+          cursor: pointer;
+        ">Later</button>
+      `;
+      document.body.appendChild(notification);
+    }
+
+    // Listen for beforeinstallprompt event
+    window.addEventListener('beforeinstallprompt', (e) => {
+      console.log('[PWA] beforeinstallprompt event fired');
+      e.preventDefault();
+      deferredPrompt = e;
+      showInstallButton();
+    });
+
+    // Show install button
+    function showInstallButton() {
+      // Create install button if it doesn't exist
+      if (!installButton) {
+        installButton = document.createElement('button');
+        installButton.id = 'install-button';
+        installButton.textContent = '📱 Install App';
+        installButton.style.cssText = `
+          position: fixed;
+          bottom: 20px;
+          left: 20px;
+          background: rgba(102, 126, 234, 0.95);
+          color: white;
+          border: none;
+          padding: 12px 20px;
+          border-radius: 8px;
+          cursor: pointer;
+          font-family: Arial, sans-serif;
+          font-size: 14px;
+          font-weight: bold;
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+          z-index: 10000;
+          transition: all 0.3s ease;
+        `;
+
+        installButton.addEventListener('mouseenter', () => {
+          installButton.style.transform = 'translateY(-2px)';
+          installButton.style.boxShadow = '0 6px 16px rgba(0, 0, 0, 0.4)';
+        });
+
+        installButton.addEventListener('mouseleave', () => {
+          installButton.style.transform = 'translateY(0)';
+          installButton.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.3)';
+        });
+
+        installButton.addEventListener('click', installApp);
+        document.body.appendChild(installButton);
+
+        // Auto-hide after 10 seconds
+        setTimeout(() => {
+          if (installButton) {
+            installButton.style.opacity = '0';
+            setTimeout(() => {
+              if (installButton && installButton.parentElement) {
+                installButton.remove();
+                installButton = null;
+              }
+            }, 300);
+          }
+        }, 10000);
+      }
+    }
+
+    // Install app
+    async function installApp() {
+      if (!deferredPrompt) {
+        return;
+      }
+
+      // Show the install prompt
+      deferredPrompt.prompt();
+
+      // Wait for the user's response
+      const { outcome } = await deferredPrompt.userChoice;
+      console.log(`[PWA] User response to install prompt: ${outcome}`);
+
+      if (outcome === 'accepted') {
+        console.log('[PWA] User accepted the install prompt');
+      } else {
+        console.log('[PWA] User dismissed the install prompt');
+      }
+
+      // Clear the deferred prompt
+      deferredPrompt = null;
+
+      // Hide install button
+      if (installButton) {
+        installButton.style.opacity = '0';
+        setTimeout(() => {
+          if (installButton && installButton.parentElement) {
+            installButton.remove();
+            installButton = null;
+          }
+        }, 300);
+      }
+    }
+
+    // Listen for app installed event
+    window.addEventListener('appinstalled', () => {
+      console.log('[PWA] App installed successfully');
+      deferredPrompt = null;
+      if (installButton && installButton.parentElement) {
+        installButton.remove();
+        installButton = null;
+      }
+    });
+
+    // Check if app is running in standalone mode (installed)
+    if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true) {
+      console.log('[PWA] App is running in standalone mode');
+    }
+
+    // ============================================
+    // Storage & Data Export
+    // ============================================
+
+    // Initialize IndexedDB storage
+    storage.init().then(() => {
+      console.log('[Storage] Initialized successfully');
+
+      // Migrate data from localStorage to IndexedDB if exists
+      migrateFromLocalStorage();
+    }).catch((error) => {
+      console.error('[Storage] Initialization failed:', error);
+    });
+
+    // Migrate existing localStorage data to IndexedDB
+    async function migrateFromLocalStorage() {
+      const progressData = localStorage.getItem('progressData');
+      if (progressData) {
+        try {
+          const data = JSON.parse(progressData);
+          await storage.save('progressData', data);
+          console.log('[Storage] Migrated progressData from localStorage to IndexedDB');
+
+          // Optionally remove from localStorage after successful migration
+          // localStorage.removeItem('progressData');
+        } catch (error) {
+          console.error('[Storage] Migration failed:', error);
+        }
+      }
+    }
+
+    // Export data to CSV
+    const exportButton = document.getElementById('export-data-button');
+    if (exportButton) {
+      exportButton.addEventListener('click', async () => {
+        try {
+          showLoading(0);
+
+          // Get all progress data
+          const progressData = await storage.get('progressData') || [];
+
+          if (progressData.length === 0) {
+            alert('No data to export yet. Play some games first!');
+            hideLoading();
+            return;
+          }
+
+          showLoading(50);
+
+          // Flatten the data for CSV export
+          const flatData = [];
+          progressData.forEach(day => {
+            if (day.sessions) {
+              day.sessions.forEach(session => {
+                flatData.push({
+                  date: day.date,
+                  sessionId: session.sessionId,
+                  averageScore: session.sessionAverageScore,
+                  averageAccuracy: session.sessionAverageAccuracy,
+                  maxScore: session.sessionMaxScore,
+                  trialsCompleted: session.sessionTrialsCompleted
+                });
+              });
+            } else {
+              // Legacy format without sessions
+              flatData.push({
+                date: day.date,
+                averageScore: day.averageScore,
+                averageAccuracy: day.averageAccuracy,
+                maxScore: day.maxScore,
+                trialsCompleted: day.trialsCompleted
+              });
+            }
+          });
+
+          showLoading(80);
+
+          // Convert to CSV
+          const csv = exportToCSV(flatData);
+
+          // Download CSV
+          const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+          downloadCSV(csv, `jiggle-factorial-${timestamp}.csv`);
+
+          showLoading(100);
+          setTimeout(hideLoading, 500);
+
+          console.log('[Storage] Data exported successfully');
+        } catch (error) {
+          console.error('[Storage] Export failed:', error);
+          alert('Failed to export data. See console for details.');
+          hideLoading();
+        }
+      });
+    }
+
+    // Add storage statistics to console
+    storage.getStats().then(stats => {
+      console.log('[Storage] Statistics:', stats);
+    });
+
+    // Auto-prune old data every 7 days (run on startup)
+    const lastPruneKey = 'lastPruneDate';
+    storage.get(lastPruneKey).then(lastPrune => {
+      const now = Date.now();
+      const sevenDays = 7 * 24 * 60 * 60 * 1000;
+
+      if (!lastPrune || (now - lastPrune) > sevenDays) {
+        storage.pruneOldData(90).then(deleted => {
+          console.log(`[Storage] Pruned ${deleted} old records`);
+          storage.save(lastPruneKey, now);
+        });
+      }
+    });
 
   </script>
 </body>

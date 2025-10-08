@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Generate App Icons</title>
+    <style>
+        body {
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+            background: #1a1a1a;
+            color: white;
+        }
+
+        canvas {
+            margin: 10px;
+            border: 2px solid #667eea;
+        }
+
+        button {
+            margin: 10px;
+            padding: 10px 20px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+
+        button:hover {
+            background: #764ba2;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Jiggle Factorial 3D - Icon Generator</h1>
+    <p>Right-click each canvas and "Save As" to download the icons</p>
+    <div>
+        <h3>192x192 Icon</h3>
+        <canvas id="icon192" width="192" height="192"></canvas>
+        <button onclick="downloadCanvas('icon192', 'icon-192.png')">Download 192x192</button>
+    </div>
+    <div>
+        <h3>512x512 Icon</h3>
+        <canvas id="icon512" width="512" height="512"></canvas>
+        <button onclick="downloadCanvas('icon512', 'icon-512.png')">Download 512x512</button>
+    </div>
+
+    <script>
+        function drawIcon(canvas) {
+            const ctx = canvas.getContext('2d');
+            const size = canvas.width;
+            const centerX = size / 2;
+            const centerY = size / 2;
+
+            // Background gradient
+            const bgGradient = ctx.createLinearGradient(0, 0, size, size);
+            bgGradient.addColorStop(0, '#667eea');
+            bgGradient.addColorStop(1, '#764ba2');
+            ctx.fillStyle = bgGradient;
+            ctx.fillRect(0, 0, size, size);
+
+            // Draw 3 spheres (representing balls)
+            const sphereRadius = size * 0.15;
+            const positions = [
+                { x: centerX, y: centerY - sphereRadius * 1.2 },
+                { x: centerX - sphereRadius * 1.5, y: centerY + sphereRadius * 0.8 },
+                { x: centerX + sphereRadius * 1.5, y: centerY + sphereRadius * 0.8 }
+            ];
+
+            positions.forEach((pos, index) => {
+                // Sphere gradient
+                const gradient = ctx.createRadialGradient(
+                    pos.x - sphereRadius * 0.3,
+                    pos.y - sphereRadius * 0.3,
+                    sphereRadius * 0.1,
+                    pos.x,
+                    pos.y,
+                    sphereRadius
+                );
+
+                // Different colors for each sphere
+                const colors = ['#87CEEB', '#FFD700', '#FF6B6B'];
+                gradient.addColorStop(0, 'white');
+                gradient.addColorStop(0.3, colors[index]);
+                gradient.addColorStop(1, 'rgba(0, 0, 0, 0.3)');
+
+                ctx.fillStyle = gradient;
+                ctx.beginPath();
+                ctx.arc(pos.x, pos.y, sphereRadius, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Highlight
+                const highlightGradient = ctx.createRadialGradient(
+                    pos.x - sphereRadius * 0.4,
+                    pos.y - sphereRadius * 0.4,
+                    0,
+                    pos.x - sphereRadius * 0.4,
+                    pos.y - sphereRadius * 0.4,
+                    sphereRadius * 0.5
+                );
+                highlightGradient.addColorStop(0, 'rgba(255, 255, 255, 0.8)');
+                highlightGradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+                ctx.fillStyle = highlightGradient;
+                ctx.beginPath();
+                ctx.arc(pos.x, pos.y, sphereRadius, 0, Math.PI * 2);
+                ctx.fill();
+            });
+
+            // Add text "3D" at bottom
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+            ctx.font = `bold ${size * 0.2}px Arial`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'bottom';
+            ctx.fillText('3D', centerX, size - size * 0.05);
+        }
+
+        function downloadCanvas(canvasId, filename) {
+            const canvas = document.getElementById(canvasId);
+            const link = document.createElement('a');
+            link.download = filename;
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+        }
+
+        // Generate icons on load
+        window.addEventListener('load', () => {
+            drawIcon(document.getElementById('icon192'));
+            drawIcon(document.getElementById('icon512'));
+        });
+    </script>
+</body>
+
+</html>
